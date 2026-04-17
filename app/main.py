@@ -51,6 +51,11 @@ def render_sidebar() -> str:
 
         st.divider()
         st.markdown("**🌐 AI 프로바이더 선택**")
+        
+        # 세션에 설정이 없다면 클라우드 모델을 기본값으로 명시적 강제 할당
+        if "provider" not in st.session_state:
+            st.session_state.provider = P.ALL[0] # OPENAI, GEMINI 등 클라우드 모델 최상단
+
         st.radio("AI 프로바이더", P.ALL, key="provider", label_visibility="collapsed")
         provider = st.session_state.provider
 
