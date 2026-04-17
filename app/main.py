@@ -15,7 +15,7 @@ from src.models import check_lmstudio_connection, check_ollama_connection
 from app.pages import (
     render_image_analyzer, render_step_solver, render_lesson_plan,
     render_quiz_generator, render_chatbot, render_pdf_analyzer,
-    render_code_analyzer
+    render_code_analyzer, render_feedback_form
 )
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
@@ -40,6 +40,7 @@ def render_sidebar() -> str:
         feature = st.radio("🔧 기능 선택", [
             "📸 이미지 문제 분석기", "📑 PDF 문서 분석기", "🧠 단계별 풀이 생성기",
             "📄 교안 생성기", "📝 평가문항 생성기", "💻 프로그래밍 코드 분석기", "💬 교육 상담 챗봇",
+            "📬 피드백 보내기",
         ], key="selected_feature")
 
         st.divider()
@@ -299,6 +300,8 @@ def main() -> None:
         render_code_analyzer()
     elif feature == "💬 교육 상담 챗봇":
         render_chatbot()
+    elif feature == "📬 피드백 보내기":
+        render_feedback_form()
 
 
 if __name__ == "__main__":
