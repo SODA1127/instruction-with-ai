@@ -6,6 +6,39 @@
 
 ## 🏗 시스템 아키텍처
 
+```mermaid
+graph TD
+    User((사용자)) -->|인터랙션| Streamlit[Streamlit Frontend]
+    
+    subgraph App_Layer [Application Layer]
+        Streamlit --> Main[app/main.py]
+        Main --> Pages[app/pages.py]
+    end
+    
+    subgraph Logic_Layer [Core Logic Layer]
+        Pages --> Models[src/models.py]
+        Pages --> Utils[src/utils.py]
+        Utils --> PDFGen[PDF Rendering Engine]
+    end
+    
+    subgraph AI_Engine [AI & Data Engines]
+        Models -->|Local API| LMStudio[Local: LM Studio]
+        Models -->|Cloud API| CloudAI[Cloud: Gemini / OpenAI]
+        Utils -->|Document| PyMuPDF[PyMuPDF / PyPDF]
+    end
+    
+    subgraph Output_Data [Final Outputs]
+        PDFGen --> PDFFile[💾 고품질 PDF]
+        Pages --> MDFile[💾 표준 마크다운]
+    end
+    
+    %% 스타일링
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style LMStudio fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style CloudAI fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    style PDFFile fill:#ffecb3,stroke:#ffa000,stroke-width:2px
+```
+
 본 프로젝트는 사용자 경험과 성능을 동시에 고려한 하이브리드 AI 아키텍처를 채택하고 있습니다.
 
 - **Frontend**: `Streamlit` 기반의 인터랙티브 웹 인터페이스.
