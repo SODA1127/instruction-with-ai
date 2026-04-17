@@ -45,7 +45,7 @@ def render_sidebar() -> str:
         st.divider()
         st.markdown("**🎓 수강 대상 모드**")
         st.radio("수강 대상", 
-                 ["👩‍🏫 교육자용 (상세 해설, 교수법 포함)", "👨‍🎓 수강생용 (쉬운 개념 풀이, 학습 팁 포함)"], 
+                 ["👨‍🎓 수강생용 (쉬운 개념 풀이, 학습 팁 포함)", "👩‍🏫 교육자용 (상세 해설, 교수법 포함)"], 
                  key="user_mode", label_visibility="collapsed")
 
         st.divider()
