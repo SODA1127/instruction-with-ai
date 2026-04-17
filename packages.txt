@@ -7,3 +7,4 @@ libgdk-pixbuf-2.0-0
 libffi-dev
 shared-mime-info
 fonts-nanum
+fonts-noto-color-emoji
