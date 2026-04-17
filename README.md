@@ -4,6 +4,9 @@
 
 ---
 
+<img width="1728" height="1117" alt="스크린샷 2026-04-18 오전 2 32 27" src="https://github.com/user-attachments/assets/75704484-b69c-41c2-b9da-9a46a6be70eb" />
+
+
 ## 🏗 시스템 아키텍처
 
 ```mermaid
