@@ -3,7 +3,6 @@ pypdf
 pymupdf
 weasyprint
 markdown
-markdown-katex
 pygments
 pylatexenc
 pillow
@@ -11,3 +10,6 @@ python-dotenv
 google-generativeai
 openai
 requests
+latex2mathml
+matplotlib
+json-repair
