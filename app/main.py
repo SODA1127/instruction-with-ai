@@ -59,9 +59,15 @@ def render_sidebar() -> str:
         
         # 세션에 설정이 없다면 클라우드 모델을 기본값으로 명시적 강제 할당
         if "provider" not in st.session_state:
-            st.session_state.provider = P.ALL[0] # OPENAI, GEMINI 등 클라우드 모델 최상단
+            st.session_state.provider = P.ALL[0] # Gemini
 
-        st.radio("AI 프로바이더", P.ALL, key="provider", label_visibility="collapsed")
+        # P.ALL 내에서 현재 session_state.provider의 인덱스 찾기 (기본값 0)
+        try:
+            default_index = P.ALL.index(st.session_state.provider)
+        except ValueError:
+            default_index = 0
+
+        st.radio("AI 프로바이더", P.ALL, index=default_index, key="provider", label_visibility="collapsed")
         provider = st.session_state.provider
 
         st.divider()
