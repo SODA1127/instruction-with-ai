@@ -22,8 +22,13 @@ CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
 
 import extra_streamlit_components as stx
 
+_cookie_manager = None
+
 def get_cookie_manager():
-    return stx.CookieManager()
+    global _cookie_manager
+    if _cookie_manager is None:
+        _cookie_manager = stx.CookieManager(key="global_cookie_manager")
+    return _cookie_manager
 
 def _get_api_key_cookie_name(provider: str) -> str:
     # 프로바이더 이름에서 공백과 특수문자를 제거하여 쿠키 키 생성
