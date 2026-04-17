@@ -327,7 +327,7 @@ def make_pdf_bytes(md_text: str) -> bytes:
                 
                 @page {{ margin: 2.5cm; }}
                 body {{ 
-                    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'NanumGothic', sans-serif;
+                    font-family: 'NanumGothic', 'NanumBarunGothic', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
                     line-height: 1.7;
                     color: #333;
                     font-size: 11pt;
@@ -350,7 +350,7 @@ def make_pdf_bytes(md_text: str) -> bytes:
                     background: #f1f5f9; 
                     padding: 2px 5px; 
                     border-radius: 4px; 
-                    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+                    font-family: "NanumGothicCoding", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
                     font-size: 0.9em;
                     color: #e11d48;
                 }}
@@ -360,7 +360,7 @@ def make_pdf_bytes(md_text: str) -> bytes:
                     padding: 1.2rem; 
                     border-radius: 10px; 
                     overflow-x: auto; 
-                    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+                    font-family: "NanumGothicCoding", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
                     font-size: 0.82em;
                     line-height: 1.5;
                     margin: 1.2rem 0;
