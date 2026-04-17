@@ -1,0 +1,13 @@
+streamlit
+pypdf
+pymupdf
+weasyprint
+markdown
+markdown-katex
+pygments
+pylatexenc
+pillow
+python-dotenv
+google-generativeai
+openai
+requests

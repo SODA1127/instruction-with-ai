@@ -1,0 +1,1940 @@
+"""
+🎓 AI 교육 도우미
+한국 교육자(교사/강사)를 위한 멀티 프로바이더 AI 교육 보조 도구
+지원 프로바이더: LM Studio (로컬) | OpenAI | Google Gemini | Anthropic Claude
+"""
+
+import streamlit as st
+import requests
+import base64
+import json
+import re
+import io
+from PIL import Image
+
+# PDF 처리 라이브러리 (선택적 임포트 — 없으면 텍스트 전용 모드)
+try:
+    import pypdf
+    _PYPDF_OK = True
+except ImportError:
+    _PYPDF_OK = False
+
+try:
+    import fitz  # pymupdf
+    _FITZ_OK = True
+except ImportError:
+    _FITZ_OK = False
+
+# ────────────────────────────────────────────────────────────
+# 프로바이더 상수 및 설정
+# ────────────────────────────────────────────────────────────
+
+class P:
+    """Provider 이름 상수"""
+    LMSTUDIO = "🖥️ LM Studio (로컬)"
+    OPENAI   = "🤖 OpenAI ChatGPT"
+    GEMINI   = "✨ Google Gemini"
+    CLAUDE   = "🎭 Anthropic Claude"
+    ALL      = [LMSTUDIO, OPENAI, GEMINI, CLAUDE]
+
+# 각 프로바이더의 사용 가능 모델 목록 (API 실제 model ID 기준, 2026-04 최신)
+PROVIDER_MODELS: dict[str, list[str]] = {
+    P.LMSTUDIO: [],  # 앱 시작 시 동적으로 채움
+
+    # OpenAI: GPT-5.4 시리즈 (2026 최신), 추론 특화 o-시리즈
+    P.OPENAI: [
+        "gpt-5.4",          # 최신 플래그십
+        "gpt-5.4-pro",      # 최고 성능/정밀도
+        "gpt-5.4-mini",     # 고효율 경량
+        "gpt-5.4-nano",     # 대량 처리용 초경량
+        "gpt-4.1",          # 안정적인 이전 세대
+        "o4-mini",          # 추론 특화 경량
+        "o3",               # 추론 특화 플래그십
+    ],
+
+    # Google Gemini: 3.1 시리즈 최신 (preview), 안정 버전 포함
+    P.GEMINI: [
+        "gemini-3.1-pro-preview",   # 최신 플래그십, 추론·에이전트 특화
+        "gemini-3-flash-preview",   # 속도·비용 균형 워크호스
+        "gemini-2.5-pro",           # 안정적인 긴 컨텍스트
+        "gemini-2.5-flash",         # 빠른 응답, 비용 효율
+        "gemini-2.0-flash",         # 검증된 멀티모달
+    ],
+
+    # Anthropic Claude: Opus 4.7 (4/16 최신), Sonnet 4.6, Haiku 3.5
+    P.CLAUDE: [
+        "claude-opus-4-7",            # 최상위 플래그십 (2026-04-16 출시)
+        "claude-opus-4-5",            # 이전 Opus 플래그십
+        "claude-sonnet-4-6",          # 속도·성능 균형 (최신 Sonnet)
+        "claude-sonnet-4-5",          # 안정적인 Sonnet
+        "claude-haiku-3-5",           # 빠른 응답, 저비용
+        "claude-3-5-sonnet-20241022", # 검증된 구버전 stable
+    ],
+}
+
+# OpenAI 호환 엔드포인트 (LM Studio / OpenAI / Gemini OpenAI-compat 공통)
+OPENAI_COMPAT_ENDPOINTS: dict[str, str] = {
+    P.LMSTUDIO: "http://localhost:1234/v1/chat/completions",
+    P.OPENAI:   "https://api.openai.com/v1/chat/completions",
+    P.GEMINI:   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+}
+
+# API 키 안내 (링크, 키 prefix 예시)
+PROVIDER_KEY_HINTS: dict[str, tuple[str, str]] = {
+    P.OPENAI: ("https://platform.openai.com/api-keys",         "sk-..."),
+    P.GEMINI: ("https://aistudio.google.com/apikey",           "AIza..."),
+    P.CLAUDE: ("https://console.anthropic.com/settings/keys",  "sk-ant-..."),
+}
+
+# LM Studio 로컬 모델 우선순위
+LMSTUDIO_PREFERRED = [
+    "google/gemma-4-e4b",
+    "google/gemma-4-31b",
+    "qwen3.5-9b-claude-4.6-opus-reasoning-distilled-v2",
+]
+
+DEFAULT_SAMPLING = {"temperature": 1.0, "top_p": 0.95}
+MAX_IMAGE_SIZE   = 1920
+
+# ────────────────────────────────────────────────────────────
+# 시스템 프롬프트
+# ────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPTS = {
+    "image_analyzer": """당신은 한국의 교육 전문가 AI 보조입니다.
+업로드된 이미지를 분석하여 교사에게 도움이 되는 정보를 제공합니다.
+- 문제 텍스트 추출: 이미지에서 문제를 정확히 읽어 텍스트로 변환합니다.
+- 답안 채점 보조: 학생 답안을 분석하고 채점 기준에 따른 피드백을 제안합니다.
+- 난이도 분석: 문제의 난이도, 출제 의도, 평가 요소를 분석합니다.
+항상 한국어로 답변하세요. 교육과정 맥락을 고려하여 실용적인 조언을 제공하세요.""",
+
+    "step_solver": """당신은 한국의 수학/과학 교육 전문가입니다.
+문제를 받으면 반드시 단계별로 상세하게 풀이 과정을 보여주세요.
+- 각 단계에 번호를 매기고 논리적 근거를 설명하세요.
+- 학생이 이해할 수 있는 수준으로 설명하세요.
+- 관련 공식이나 개념도 함께 언급하세요.
+- 최종 답을 명확히 제시하세요.
+한국어로 답변하세요.""",
+
+    "lesson_plan": """당신은 한국 교육과정에 정통한 교육 컨설턴트 AI입니다.
+교사가 제공한 정보를 바탕으로 체계적인 교안을 작성합니다.
+
+[수업 지도안 형식]
+1. 단원명 / 차시
+2. 학습 목표 (성취기준 연계)
+3. 도입 (동기유발, 전시학습 확인) - 시간 배분 포함
+4. 전개 (교수-학습 활동, 핵심 질문, 학생 활동) - 시간 배분 포함
+5. 정리 (형성평가, 차시 예고) - 시간 배분 포함
+6. 평가 계획
+7. 준비물 및 유의사항
+
+실제 교실에서 바로 사용할 수 있도록 구체적으로 작성하세요.
+한국어로 답변하세요.""",
+
+    "quiz_generator": """당신은 한국의 평가 문항 출제 전문가 AI입니다.
+제공된 학습 내용을 바탕으로 교육적으로 타당한 평가 문항을 생성합니다.
+
+각 문항에 반드시 포함할 내용:
+- 문항 번호와 문제
+- 보기 (선택형의 경우)
+- ✅ 정답
+- 📝 해설 (왜 그 답이 맞는지, 오답인 이유)
+- 🎯 평가 요소 (이 문항이 측정하는 능력)
+
+문항은 블룸의 교육목표 분류체계(기억, 이해, 적용, 분석, 평가, 창조)를
+고려하여 다양한 수준으로 출제하세요.
+한국어로 답변하세요.""",
+
+    "chatbot": """당신은 20년 경력의 한국 교육 전문가이자 교육 상담사입니다.
+교사들의 고민과 질문에 실질적이고 따뜻한 조언을 제공합니다.
+
+상담 가능 영역:
+- 교수법 및 수업 설계
+- 학생 생활지도 및 상담
+- 학급 경영 전략
+- 학부모 소통
+- 교사 번아웃 예방
+- 특수교육 및 통합교육
+- 디지털 도구 활용 교육
+
+항상 공감하며 경청하고, 구체적인 사례와 함께 실천 가능한 조언을 제공하세요.
+필요시 관련 교육 이론이나 연구를 인용하세요.
+한국어로 답변하세요.""",
+}
+
+
+# ────────────────────────────────────────────────────────────
+# 이미지 유틸리티
+# ────────────────────────────────────────────────────────────
+
+def encode_image_to_base64(uploaded_file, max_size: int = MAX_IMAGE_SIZE) -> str:
+    """UploadedFile → base64 JPEG 문자열. 최대 크기 초과 시 리사이즈."""
+    img = Image.open(uploaded_file)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    w, h = img.size
+    if max(w, h) > max_size:
+        ratio = max_size / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+def make_pdf_bytes(md_text: str) -> bytes:
+    """markdown-pdf를 사용하여 마크다운 텍스트를 PDF 바이너리로 변환."""
+    try:
+        from markdown_pdf import MarkdownPdf, Section
+        pdf = MarkdownPdf()
+        # toc=False 옵션은 MarkdownPdf 최신 API에 따라 생략 등 필요.
+        # Section 자체가 text만 취할 수 있음
+        pdf.add_section(Section(md_text))
+        buf = io.BytesIO()
+        pdf.save(buf)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"PDF 생성 에러: {e}")
+        return b""
+
+
+# ────────────────────────────────────────────────────────────
+# Thinking 파싱
+# ────────────────────────────────────────────────────────────
+
+def parse_thinking_response(text: str) -> tuple[str, str]:
+    """
+    Thinking 토큰을 사고 과정과 최종 답변으로 분리.
+    지원 패턴: <think>...</think> | Gemma 4 채널 형식
+    Returns: (thinking_text, final_answer)
+    """
+    # Gemma 4 전용 채널 형식
+    m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
+    if m:
+        return m.group(1).strip(), text[m.end():].strip()
+
+    # 일반 <think>...</think>
+    m = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
+    if m:
+        thinking = m.group(1).strip()
+        final = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        return thinking, final
+
+    return "", text
+
+
+# ────────────────────────────────────────────────────────────
+# 메시지 빌더 (프로바이더별)
+# ────────────────────────────────────────────────────────────
+
+def build_openai_messages(
+    system_prompt: str,
+    user_content: str,
+    images_b64: list[str] | None = None,
+    history: list[dict] | None = None,
+) -> list[dict]:
+    """OpenAI / LM Studio / Gemini 호환 메시지 배열 구성."""
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        for msg in history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    if images_b64:
+        parts = []
+        # 이미지를 텍스트보다 앞에 배치 (멀티모달 최적 성능)
+        for b64 in images_b64:
+            parts.append({"type": "image_url",
+                          "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+        parts.append({"type": "text", "text": user_content})
+        messages.append({"role": "user", "content": parts})
+    else:
+        messages.append({"role": "user", "content": user_content})
+    return messages
+
+
+def build_claude_payload(
+    system_prompt: str,
+    user_content: str,
+    model: str,
+    images_b64: list[str] | None = None,
+    history: list[dict] | None = None,
+    stream: bool = False,
+) -> dict:
+    """Anthropic Claude API 전용 페이로드 구성."""
+    messages = []
+    if history:
+        for msg in history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    if images_b64:
+        content = []
+        for b64 in images_b64:
+            content.append({"type": "image",
+                            "source": {"type": "base64",
+                                       "media_type": "image/jpeg",
+                                       "data": b64}})
+        content.append({"type": "text", "text": user_content})
+        messages.append({"role": "user", "content": content})
+    else:
+        messages.append({"role": "user", "content": user_content})
+
+    return {
+        "model": model,
+        "system": system_prompt,
+        "messages": messages,
+        "max_tokens": 4096,
+        "stream": stream,
+        **DEFAULT_SAMPLING,
+    }
+
+
+# ────────────────────────────────────────────────────────────
+# 프로바이더별 API 호출
+# ────────────────────────────────────────────────────────────
+
+def _extract_error(resp: requests.Response) -> str:
+    """HTTP 에러 응답에서 사람이 읽을 수 있는 메시지 추출."""
+    try:
+        body = resp.json()
+        # OpenAI / LM Studio 형식
+        if "error" in body:
+            err = body["error"]
+            return err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        # Anthropic 형식
+        if "error" in body:
+            return body["error"].get("message", str(body))
+    except Exception:
+        pass
+    return resp.text[:300]
+
+
+def call_openai_compat(
+    endpoint: str,
+    api_key: str,
+    messages: list[dict],
+    model: str,
+    stream: bool = False,
+) -> str | requests.Response:
+    """
+    OpenAI 호환 엔드포인트 호출 (LM Studio, OpenAI, Gemini 공통).
+    stream=True 시 Response 객체 반환, False 시 응답 텍스트 반환.
+    reasoning_content 필드 자동 처리.
+    """
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        **DEFAULT_SAMPLING,
+    }
+
+    resp = requests.post(endpoint, headers=headers, json=payload,
+                         stream=stream, timeout=180)
+    if not resp.ok:
+        raise RuntimeError(f"[{resp.status_code}] {_extract_error(resp)}")
+
+    if stream:
+        return resp
+
+    data = resp.json()
+    msg = data["choices"][0]["message"]
+    content = msg.get("content", "").strip()
+    reasoning = msg.get("reasoning_content", "").strip()
+
+    if reasoning and content:
+        content = f"<think>\n{reasoning}\n</think>\n{content}"
+    elif reasoning:
+        content = reasoning  # content가 비어 있을 때 폴백
+
+    return content
+
+
+def call_claude(
+    api_key: str,
+    payload: dict,
+    stream: bool = False,
+) -> str | requests.Response:
+    """Anthropic Claude API 호출."""
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers=headers,
+        json=payload,
+        stream=stream,
+        timeout=180,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"[{resp.status_code}] {_extract_error(resp)}")
+
+    if stream:
+        return resp
+
+    data = resp.json()
+    # Claude는 content 배열로 반환
+    parts = data.get("content", [])
+    text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+    return text.strip()
+
+
+def call_ai(
+    system_prompt: str,
+    user_content: str,
+    provider: str,
+    model: str,
+    api_key: str = "",
+    images_b64: list[str] | None = None,
+    history: list[dict] | None = None,
+    stream: bool = False,
+) -> str | requests.Response:
+    """
+    통합 AI 호출 인터페이스.
+    provider에 따라 OpenAI 호환 엔드포인트 또는 Claude API로 분기.
+    """
+    try:
+        if provider == P.CLAUDE:
+            payload = build_claude_payload(
+                system_prompt, user_content, model, images_b64, history, stream
+            )
+            return call_claude(api_key, payload, stream)
+        else:
+            # LM Studio, OpenAI, Gemini 모두 OpenAI 호환 포맷
+            endpoint = OPENAI_COMPAT_ENDPOINTS[provider]
+            messages = build_openai_messages(
+                system_prompt, user_content, images_b64, history
+            )
+            return call_openai_compat(endpoint, api_key, messages, model, stream)
+
+    except requests.exceptions.ConnectionError:
+        raise ConnectionError(
+            "서버에 연결할 수 없습니다. "
+            "LM Studio를 실행 중인지, 또는 네트워크 연결을 확인하세요."
+        )
+    except requests.exceptions.Timeout:
+        raise TimeoutError("응답 시간이 초과되었습니다. 다시 시도해주세요.")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"API 호출 오류: {e}")
+
+
+# ────────────────────────────────────────────────────────────
+# 스트리밍 처리 (프로바이더별)
+# ────────────────────────────────────────────────────────────
+
+def stream_openai_compat(resp: requests.Response) -> str:
+    """OpenAI SSE 스트림을 Streamlit placeholder에 실시간 출력."""
+    placeholder = st.empty()
+    full_text = ""
+    reasoning_text = ""
+
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if not line.startswith("data: "):
+            continue
+        data_str = line[6:]
+        if data_str == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data_str)
+            delta = chunk["choices"][0].get("delta", {})
+            token = delta.get("content", "")
+            reasoning_token = delta.get("reasoning_content", "")
+            if reasoning_token:
+                reasoning_text += reasoning_token
+            if token:
+                full_text += token
+                placeholder.markdown(full_text + "▌")
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    placeholder.markdown(full_text)
+
+    if reasoning_text.strip():
+        return f"<think>\n{reasoning_text.strip()}\n</think>\n{full_text}"
+    return full_text
+
+
+def stream_claude(resp: requests.Response) -> str:
+    """Anthropic SSE 스트림을 Streamlit placeholder에 실시간 출력."""
+    placeholder = st.empty()
+    full_text = ""
+
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if line.startswith("data: "):
+            data_str = line[6:]
+            try:
+                chunk = json.loads(data_str)
+                if chunk.get("type") == "content_block_delta":
+                    delta = chunk.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        token = delta.get("text", "")
+                        full_text += token
+                        placeholder.markdown(full_text + "▌")
+            except json.JSONDecodeError:
+                continue
+
+    placeholder.markdown(full_text)
+    return full_text
+
+
+def stream_ai(resp: requests.Response, provider: str) -> str:
+    """프로바이더에 따라 적절한 스트리밍 핸들러로 분기."""
+    if provider == P.CLAUDE:
+        return stream_claude(resp)
+    return stream_openai_compat(resp)
+
+
+# ────────────────────────────────────────────────────────────
+# LM Studio 연결 확인
+# ────────────────────────────────────────────────────────────
+
+def check_lmstudio_connection() -> tuple[bool, str, list[str]]:
+    """
+    LM Studio 실제 추론 가능 모델을 검색합니다.
+    Returns: (연결됨, 기본 모델명, 사용 가능 모델 목록)
+    """
+    try:
+        resp = requests.get("http://localhost:1234/v1/models", timeout=3)
+        if resp.status_code != 200:
+            return False, "", []
+
+        all_ids = [m["id"] for m in resp.json().get("data", [])]
+        # embedding 모델 제거
+        chat_ids = [m for m in all_ids if "embed" not in m.lower()]
+
+        candidates = [m for m in LMSTUDIO_PREFERRED if m in chat_ids] + \
+                     [m for m in chat_ids if m not in LMSTUDIO_PREFERRED]
+
+        for model_id in candidates:
+            try:
+                ping = requests.post(
+                    "http://localhost:1234/v1/chat/completions",
+                    json={"model": model_id,
+                          "messages": [{"role": "user", "content": "hi"}],
+                          "stream": False, "max_tokens": 1},
+                    timeout=10,
+                )
+                if ping.status_code == 200:
+                    return True, model_id, candidates
+            except Exception:
+                continue
+
+        return False, "", candidates
+    except Exception:
+        return False, "", []
+
+
+# ────────────────────────────────────────────────────────────
+# 세션 상태에서 현재 프로바이더 설정 읽기
+# ────────────────────────────────────────────────────────────
+
+def get_session_config() -> tuple[str, str, str]:
+    """(provider, model, api_key) 트리플 반환."""
+    return (
+        st.session_state.get("provider", P.LMSTUDIO),
+        st.session_state.get("model", ""),
+        st.session_state.get("api_key", ""),
+    )
+
+
+# ────────────────────────────────────────────────────────────
+# 기능 렌더링
+# ────────────────────────────────────────────────────────────
+
+def render_image_analyzer() -> None:
+    """📸 기능 1: 이미지 기반 문제 분석기"""
+    provider, model, api_key = get_session_config()
+    st.header("📸 이미지 기반 문제 분석기")
+    st.caption("시험지, 학생 답안지, 교과서 사진을 업로드하면 AI가 분석합니다.")
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        uploaded = st.file_uploader("이미지 업로드", type=["png", "jpg", "jpeg"],
+                                    key="img_analyzer_upload")
+        analysis_type = st.radio("분석 유형",
+            ["📄 문제 텍스트 추출", "✏️ 답안 채점 보조", "📊 난이도 분석"],
+            key="img_analysis_type")
+        extra_info = st.text_area("추가 지시사항 (선택)",
+            placeholder="예: 중학교 2학년 수학 문제입니다.",
+            key="img_extra_info", height=100)
+        if uploaded:
+            st.image(uploaded, caption="업로드된 이미지", use_container_width=True)
+
+    with col2:
+        if st.button("🔍 분석 시작", key="btn_image_analyze", use_container_width=True):
+            if not uploaded:
+                st.warning("⚠️ 이미지를 먼저 업로드하세요.")
+                return
+            type_label = analysis_type.split(" ", 1)[1]
+            user_prompt = f"다음 이미지에 대해 [{type_label}]을 수행해주세요."
+            if extra_info.strip():
+                user_prompt += f"\n\n추가 지시: {extra_info}"
+            try:
+                with st.spinner("🤖 AI가 이미지를 분석하는 중..."):
+                    b64 = encode_image_to_base64(uploaded)
+                    result = call_ai(SYSTEM_PROMPTS["image_analyzer"],
+                                     user_prompt, provider, model, api_key,
+                                     images_b64=[b64])
+                st.session_state.img_analyzer_result = result
+            except Exception as e:
+                st.error(f"❌ {e}")
+
+        if st.session_state.get("img_analyzer_result"):
+            st.subheader("📋 분석 결과")
+            st.markdown(st.session_state.img_analyzer_result)
+            dl_col1, dl_col2 = st.columns([1, 1])
+            with dl_col1:
+                st.download_button("💾 결과 저장 (.md)", data=st.session_state.img_analyzer_result.encode('utf-8-sig'),
+                                   file_name="image_analysis_result.md", mime="text/markdown",
+                                   key="download_img_result_md", use_container_width=True)
+            with dl_col2:
+                pdf_bytes = make_pdf_bytes(st.session_state.img_analyzer_result)
+                if pdf_bytes:
+                    st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
+                                       file_name="image_analysis_result.pdf", mime="application/pdf",
+                                       key="download_img_result_pdf", use_container_width=True)
+
+
+def render_step_solver() -> None:
+    """🧠 기능 2: 단계별 풀이 생성기 (Thinking 모드)"""
+    provider, model, api_key = get_session_config()
+    st.header("🧠 단계별 풀이 생성기")
+    st.caption("수학·과학 문제를 입력하면 AI가 단계별로 풀이 과정을 보여줍니다.")
+
+    method = st.radio("입력 방식", ["✏️ 텍스트 입력", "📷 문제 사진 업로드", "📄 PDF 문서 업로드"],
+                      horizontal=True, key="solver_input_method")
+    
+    problem_text = ""
+    up = None
+
+    if method == "✏️ 텍스트 입력":
+        problem_text = st.text_area("문제 입력",
+            placeholder="예: 이차방정식 x² - 5x + 6 = 0을 풀어라.",
+            height=150, key="solver_text")
+    elif method == "📷 문제 사진 업로드":
+        up = st.file_uploader("문제 사진 업로드", type=["png", "jpg", "jpeg"],
+                              key="solver_img_upload")
+        if up:
+            st.image(up, use_container_width=True)
+    else:
+        up = st.file_uploader("PDF 문제 파일 업로드", type=["pdf"], key="solver_pdf_upload")
+
+    subject = st.selectbox("과목", ["수학", "물리", "화학", "생물", "지구과학", "기타"],
+                           key="solver_subject")
+
+    if st.button("🧩 단계별 풀이 생성", key="btn_solve", use_container_width=True):
+        img_list = None
+        if method == "✏️ 텍스트 입력":
+            if not problem_text.strip():
+                st.warning("⚠️ 문제를 입력하세요.")
+                return
+        elif method == "📷 문제 사진 업로드":
+            if not up:
+                st.warning("⚠️ 이미지를 업로드하세요.")
+                return
+            img_b64 = encode_image_to_base64(up)
+            img_list = [img_b64]
+            problem_text = "업로드된 이미지의 문제를 단계별로 풀어주세요."
+        else:
+            if not up:
+                st.warning("⚠️ PDF 문서를 업로드하세요.")
+                return
+            with st.spinner("📄 PDF 문서 분석 중..."):
+                file_bytes = up.read()
+                page_count = 0
+                if _PYPDF_OK:
+                    try:
+                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                        page_count = len(reader.pages)
+                    except Exception:
+                        pass
+                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
+                if extr_method == "text" and extracted_text.strip():
+                    problem_text = extracted_text
+                else:
+                    img_list = extracted_images if extracted_images else None
+                    if img_list and len(img_list) > 1:
+                        img_list = img_list[:1] # 한문제만 풀이하므로 첫장만
+                    problem_text = "업로드된 PDF 문서 첫 페이지의 문제를 단계별로 풀어주세요."
+
+        system = (("<|think|>\n" if provider == P.LMSTUDIO else "") +
+                  SYSTEM_PROMPTS["step_solver"])
+        user_prompt = f"[{subject} 문제]\n{problem_text}"
+
+        try:
+            with st.spinner("🤔 AI가 문제를 풀고 있습니다..."):
+                result = call_ai(system, user_prompt, provider, model, api_key,
+                                 images_b64=img_list)
+            thinking, final = parse_thinking_response(result)
+            st.session_state.step_solver_thinking = thinking
+            st.session_state.step_solver_final = final
+        except Exception as e:
+            st.error(f"❌ {e}")
+
+    if st.session_state.get("step_solver_final"):
+        thinking = st.session_state.get("step_solver_thinking", "")
+        final = st.session_state.step_solver_final
+        if thinking:
+            with st.expander("🧠 AI의 사고 과정 보기", expanded=False):
+                st.markdown(
+                    f'<div style="background:#1e1e2e;border-left:3px solid #7c3aed;'
+                    f'padding:16px;border-radius:8px;font-size:0.85rem;'
+                    f'color:#c4b5fd;white-space:pre-wrap;">{thinking}</div>',
+                    unsafe_allow_html=True)
+        st.subheader("📐 단계별 풀이")
+        st.markdown(final)
+        dl_col1, dl_col2 = st.columns([1, 1])
+        with dl_col1:
+            st.download_button("💾 풀이 저장 (.md)", data=final.encode('utf-8-sig'),
+                               file_name="step_by_step_solution.md", mime="text/markdown",
+                               key="download_step_solver_md", use_container_width=True)
+        with dl_col2:
+            pdf_bytes = make_pdf_bytes(final)
+            if pdf_bytes:
+                st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
+                                   file_name="step_by_step_solution.pdf", mime="application/pdf",
+                                   key="download_step_solver_pdf", use_container_width=True)
+
+
+def render_lesson_plan() -> None:
+    """📄 기능 3: 교안/학습자료 생성기"""
+    provider, model, api_key = get_session_config()
+    st.header("📄 교안 / 학습자료 생성기")
+    st.caption("과목과 단원 정보를 입력하면 AI가 완성된 교안을 생성합니다.")
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        subject = st.selectbox("과목",
+            ["국어", "영어", "수학", "과학", "사회", "역사", "도덕",
+             "음악", "미술", "체육", "기술·가정", "기타"], key="plan_subject")
+        grade = st.selectbox("학년",
+            ["초등 1학년", "초등 2학년", "초등 3학년", "초등 4학년", "초등 5학년", "초등 6학년",
+             "중학 1학년", "중학 2학년", "중학 3학년",
+             "고등 1학년", "고등 2학년", "고등 3학년"], key="plan_grade")
+        unit_name = st.text_input("단원명", placeholder="예: 1단원. 문학의 빛깔",
+                                  key="plan_unit")
+        duration = st.number_input("수업 시간 (분)", min_value=10, max_value=120,
+                                   value=45, step=5, key="plan_duration")
+        up = st.file_uploader("📄 참고 자료 PDF 업로드 (선택)", type=["pdf"], key="plan_pdf_upload")
+    with col2:
+        plan_type = st.selectbox("교안 유형",
+            ["📋 수업 지도안", "📝 학습 활동지", "📊 평가 계획서"], key="plan_type")
+        goals = st.text_area("학습 목표 (성취기준)",
+            placeholder="예: 시의 운율과 이미지를 분석하여 작가의 의도를 파악할 수 있다.",
+            height=100, key="plan_goals")
+        notes = st.text_area("특이사항 / 추가 요청",
+            placeholder="예: 모둠 활동 중심, 디지털 기기 활용",
+            height=80, key="plan_notes")
+
+    if st.button("📋 교안 생성", key="btn_plan", use_container_width=True):
+        if not unit_name.strip():
+            st.warning("⚠️ 단원명을 입력해주세요.")
+            return
+            
+        pdf_content = ""
+        img_list = None
+        if up:
+            with st.spinner("📄 PDF 분석 중..."):
+                file_bytes = up.read()
+                page_count = 0
+                if _PYPDF_OK:
+                    try:
+                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                        page_count = len(reader.pages)
+                    except Exception:
+                        pass
+                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
+                if extr_method == "text" and extracted_text.strip():
+                    pdf_content = extracted_text
+                else:
+                    img_list = extracted_images if extracted_images else None
+                    if img_list and len(img_list) > _PDF_MAX_IMAGE_PAGES:
+                        img_list = img_list[:_PDF_MAX_IMAGE_PAGES]
+
+        type_label = plan_type.split(" ", 1)[1]
+        user_prompt = (f"다음 정보를 바탕으로 [{type_label}]을 작성해주세요.\n\n"
+                       f"과목: {subject}\n학년: {grade}\n단원명: {unit_name}\n"
+                       f"수업 시간: {duration}분\n"
+                       f"학습 목표: {goals or '교사가 설정 예정'}\n"
+                       f"특이사항: {notes or '없음'}")
+        
+        if pdf_content:
+            user_prompt += f"\n\n[참고 자료 내용]\n{pdf_content[:20000]}"
+        elif img_list:
+            user_prompt += f"\n\n[참고 자료]\n업로드된 참고 자료의 이미지 및 내용을 바탕으로 반영해주세요."
+
+        try:
+            with st.spinner("📝 AI가 교안을 작성하는 중..."):
+                result = call_ai(SYSTEM_PROMPTS["lesson_plan"], user_prompt,
+                                 provider, model, api_key, images_b64=img_list)
+            st.session_state.lesson_plan_result = result
+        except Exception as e:
+            st.error(f"❌ {e}")
+
+    if st.session_state.get("lesson_plan_result"):
+        st.subheader("📋 생성된 교안")
+        st.markdown(st.session_state.lesson_plan_result)
+        dl_col1, dl_col2 = st.columns([1, 1])
+        with dl_col1:
+            st.download_button("💾 Markdown 저장", data=st.session_state.lesson_plan_result.encode('utf-8-sig'),
+                               file_name="lesson_plan.md", mime="text/markdown",
+                               key="dl_plan_md", use_container_width=True)
+        with dl_col2:
+            pdf_bytes = make_pdf_bytes(st.session_state.lesson_plan_result)
+            if pdf_bytes:
+                st.download_button("💾 PDF 저장", data=pdf_bytes,
+                                   file_name="lesson_plan.pdf", mime="application/pdf",
+                                   key="dl_plan_pdf", use_container_width=True)
+
+
+def render_quiz_generator() -> None:
+    """📝 기능 4: 평가문항 자동 생성기"""
+    provider, model, api_key = get_session_config()
+    st.header("📝 평가문항 자동 생성기")
+    st.caption("학습 내용을 입력하면 다양한 유형의 평가 문항을 자동으로 생성합니다.")
+
+    method = st.radio("입력 방식", ["✏️ 텍스트 입력", "📷 자료 이미지 업로드", "📄 PDF 문서 업로드"],
+                      horizontal=True, key="quiz_input_method")
+    content_text = ""
+    up = None
+
+    if method == "✏️ 텍스트 입력":
+        content_text = st.text_area("학습 내용",
+            placeholder="예: 광합성은 식물이 빛 에너지를 이용하여...",
+            height=180, key="quiz_text")
+    elif method == "📷 자료 이미지 업로드":
+        up = st.file_uploader("교과서/자료 이미지 업로드", type=["png", "jpg", "jpeg"],
+                              key="quiz_img_upload")
+        if up:
+            st.image(up, use_container_width=True)
+    else:
+        up = st.file_uploader("관련 PDF 자료 업로드", type=["pdf"], key="quiz_pdf_upload")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        q_types = st.multiselect("문항 유형",
+            ["선택형(4지선다)", "단답형", "서술형", "참/거짓", "빈칸 채우기"],
+            default=["선택형(4지선다)", "단답형"], key="quiz_types")
+    with c2:
+        num_q = st.slider("문항 수", 1, 20, 5, key="quiz_count")
+    with c3:
+        difficulty = st.select_slider("난이도", ["하", "중하", "중", "중상", "상"],
+                                      value="중", key="quiz_difficulty")
+
+    if st.button("🎯 문항 생성", key="btn_quiz", use_container_width=True):
+        img_list = None
+        if method == "✏️ 텍스트 입력":
+            if not content_text.strip():
+                st.warning("⚠️ 학습 내용을 입력하세요.")
+                return
+        elif method == "📷 자료 이미지 업로드":
+            if not up:
+                st.warning("⚠️ 이미지를 업로드하세요.")
+                return
+            img_b64 = encode_image_to_base64(up)
+            img_list = [img_b64]
+            content_text = "업로드된 이미지의 학습 내용을 바탕으로 문항을 출제해주세요."
+        else:
+            if not up:
+                st.warning("⚠️ PDF 자료를 업로드하세요.")
+                return
+            with st.spinner("📄 PDF 분석 중..."):
+                file_bytes = up.read()
+                page_count = 0
+                if _PYPDF_OK:
+                    try:
+                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                        page_count = len(reader.pages)
+                    except Exception:
+                        pass
+                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
+                if extr_method == "text" and extracted_text.strip():
+                    content_text = extracted_text
+                else:
+                    img_list = extracted_images if extracted_images else None
+                    if img_list and len(img_list) > _PDF_MAX_IMAGE_PAGES:
+                        img_list = img_list[:_PDF_MAX_IMAGE_PAGES]
+                    content_text = "업로드된 PDF 문서의 내용을 바탕으로 문항을 출제해주세요."
+
+        if not q_types:
+            st.warning("⚠️ 문항 유형을 하나 이상 선택하세요.")
+            return
+
+        system = (("<|think|>\n" if provider == P.LMSTUDIO else "") +
+                  SYSTEM_PROMPTS["quiz_generator"])
+        
+        user_prompt = (f"문항 유형: {', '.join(q_types)}\n문항 수: {num_q}문항\n"
+                       f"난이도: {difficulty}\n\n학습 내용:\n{content_text[:30000]}\n\n"
+                       f"각 문항에 정답과 해설, 평가 요소를 포함해주세요.")
+        
+        try:
+            with st.spinner("🤖 AI가 평가 문항을 출제하는 중..."):
+                result = call_ai(system, user_prompt, provider, model, api_key,
+                                 images_b64=img_list)
+            thinking, final = parse_thinking_response(result)
+            st.session_state.quiz_gen_thinking = thinking
+            st.session_state.quiz_gen_final = final
+        except Exception as e:
+            st.error(f"❌ {e}")
+
+    if st.session_state.get("quiz_gen_final"):
+        thinking = st.session_state.get("quiz_gen_thinking", "")
+        final = st.session_state.quiz_gen_final
+        if thinking:
+            with st.expander("🎯 출제 의도 및 AI 분석", expanded=False):
+                st.markdown(
+                    f'<div style="background:#1e1e2e;border-left:3px solid #059669;'
+                    f'padding:16px;border-radius:8px;font-size:0.85rem;'
+                    f'color:#6ee7b7;white-space:pre-wrap;">{thinking}</div>',
+                    unsafe_allow_html=True)
+        st.subheader("📝 생성된 평가 문항")
+        st.markdown(final)
+        dl_col1, dl_col2 = st.columns([1, 1])
+        with dl_col1:
+            st.download_button("💾 문항 저장 (.md)", data=final.encode('utf-8-sig'),
+                               file_name="quiz_questions.md", mime="text/markdown",
+                               key="dl_quiz", use_container_width=True)
+        with dl_col2:
+            pdf_bytes = make_pdf_bytes(final)
+            if pdf_bytes:
+                st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
+                                   file_name="quiz_questions.pdf", mime="application/pdf",
+                                   key="dl_quiz_pdf", use_container_width=True)
+
+
+def render_chatbot() -> None:
+    """💬 기능 5: 교육 상담 챗봇"""
+    provider, model, api_key = get_session_config()
+    st.header("💬 교육 상담 챗봇")
+    st.caption("교수법, 학생 지도, 학급 경영 등 어떤 고민이든 편하게 이야기하세요.")
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    for msg in st.session_state.chat_history:
+        avatar = "🎓" if msg["role"] == "assistant" else "🙋"
+        with st.chat_message(msg["role"], avatar=avatar):
+            st.markdown(msg["content"])
+
+    user_input = st.chat_input("고민이나 질문을 입력하세요...")
+
+    if st.sidebar.button("🗑️ 대화 초기화", key="clear_chat"):
+        st.session_state.chat_history = []
+        st.rerun()
+
+    if user_input:
+        with st.chat_message("user", avatar="🙋"):
+            st.markdown(user_input)
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+
+        with st.chat_message("assistant", avatar="🎓"):
+            full_response = ""
+            try:
+                history = st.session_state.chat_history[:-1]
+                resp = call_ai(SYSTEM_PROMPTS["chatbot"], user_input,
+                               provider, model, api_key,
+                               history=history, stream=True)
+                full_response = stream_ai(resp, provider)
+            except Exception as e:
+                st.error(f"❌ {e}")
+                full_response = ""
+
+        _, clean = parse_thinking_response(full_response)
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": clean or full_response,
+        })
+
+
+# ────────────────────────────────────────────────────────────
+# PDF 유틸리티
+# ────────────────────────────────────────────────────────────
+
+# PDF 텍스트가 분석에 충분한 품질인지 판별하는 기준 (페이지당 평균 글자 수)
+_PDF_TEXT_MIN_CHARS_PER_PAGE = 80
+# 이미지 변환 시 최대 처리 페이지 수 (토큰 폭발 방지)
+_PDF_MAX_IMAGE_PAGES = 6
+
+
+def extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
+    """
+    pypdf로 PDF에서 텍스트를 추출합니다.
+    Returns: (추출된 전체 텍스트, 총 페이지 수)
+    """
+    if not _PYPDF_OK:
+        return "", 0
+    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+    pages = []
+    for i, page in enumerate(reader.pages):
+        text = page.extract_text() or ""
+        pages.append(f"[페이지 {i + 1}]\n{text.strip()}")
+    return "\n\n".join(pages), len(reader.pages)
+
+
+def pdf_pages_to_images(file_bytes: bytes, max_pages: int = _PDF_MAX_IMAGE_PAGES, selected_pages: set[int] | None = None) -> list[str]:
+    """
+    pymupdf(fitz)로 PDF 페이지를 base64 JPEG 이미지 리스트로 변환합니다.
+    max_pages를 초과하는 페이지는 건너뜁니다.
+    Returns: base64 문자열 리스트
+    """
+    if not _FITZ_OK:
+        return []
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    images = []
+    for i in range(len(doc)):
+        if selected_pages is not None and i not in selected_pages:
+            continue
+        if len(images) >= max_pages:
+            break
+        page = doc[i]
+        # 150 DPI 상당 (2x 배율) — 속도와 품질의 균형
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("jpeg")
+        images.append(base64.b64encode(img_bytes).decode("utf-8"))
+    doc.close()
+    return images
+
+
+def is_pdf_text_sufficient(text: str, page_count: int) -> bool:
+    """텍스트 품질이 분석에 충분한지 판별합니다."""
+    if not text.strip() or page_count == 0:
+        return False
+    avg_chars = len(text.replace("\n", "").replace(" ", "")) / page_count
+    return avg_chars >= _PDF_TEXT_MIN_CHARS_PER_PAGE
+
+
+def _pdf_extract_content(
+    file_bytes: bytes,
+    page_count: int,
+    page_range: str,
+) -> tuple[str, list[str] | None, str]:
+    """
+    PDF에서 텍스트 또는 이미지를 추출합니다 (공통 로직).
+    Returns: (content_text, images_b64_or_None, extraction_method)
+    """
+    # 페이지 범위 파싱
+    selected_pages: set[int] | None = None
+    if page_range.strip():
+        try:
+            selected_pages = set()
+            for part in page_range.replace(" ", "").split(","):
+                if "-" in part:
+                    a, b = part.split("-")
+                    selected_pages.update(range(int(a) - 1, int(b)))
+                else:
+                    selected_pages.add(int(part) - 1)
+        except ValueError:
+            selected_pages = None
+
+    extracted_text, n_pages = extract_pdf_text(file_bytes)
+
+    # 페이지 범위 필터링
+    if selected_pages and extracted_text:
+        filtered, current_page_idx = [], 0
+        for line in extracted_text.split("\n"):
+            m = re.match(r"\[페이지 (\d+)\]", line)
+            if m:
+                current_page_idx = int(m.group(1)) - 1
+            if m is None or current_page_idx in selected_pages:
+                filtered.append(line)
+        extracted_text = "\n".join(filtered)
+
+    text_ok = is_pdf_text_sufficient(extracted_text, n_pages or max(1, page_count))
+
+    if text_ok:
+        return extracted_text, None, "text"
+    elif _FITZ_OK:
+        max_pg = 999  # Extract all needed images safely, limits will be handled in chunks or by selected_pages
+        images = pdf_pages_to_images(file_bytes, max_pg, selected_pages)
+        if images:
+            return "", images, "vision"
+
+    # 폴백: 텍스트가 부족해도 그대로 사용
+    return extracted_text, None, "text (sparse)"
+
+
+def _parse_question_list(raw: str) -> list[dict]:
+    """
+    AI 응답에서 문제 목록 JSON을 파싱합니다.
+    [{"번호":"1","내용":"..."},...] 형식 또는 텍스트 폴백.
+    """
+    # JSON 블록 추출 시도
+    json_match = re.search(r"\[[\s\S]*\]", raw)
+    if json_match:
+        try:
+            data = json.loads(json_match.group())
+            # 최소 필드 확인
+            return [
+                {"번호": str(q.get("번호", i + 1)), "내용": q.get("내용", "").strip()}
+                for i, q in enumerate(data)
+                if q.get("내용", "").strip()
+            ]
+        except json.JSONDecodeError:
+            pass
+
+    # 폴백 1: JSON이 깨졌거나 역슬래시 에러 시 정규식으로 직접 키/값 추출
+    questions = []
+    # "번호":"...", "내용":"..." 패턴 탐색
+    matches = re.findall(r'"번호"\s*:\s*"([^"]+)"\s*,\s*"내용"\s*:\s*"(.*?)"\s*\}', raw, re.DOTALL)
+    if matches:
+        for num, content in matches:
+            questions.append({"번호": num, "내용": content.strip().replace('\\"', '"').replace('\\\\', '\\')})
+        if questions:
+            return questions
+
+    # 폴백 2: "1." / "1)" / "문제 1" 텍스트 패턴으로 분할
+    pattern = re.split(r"(?m)^(?:문제\s*)?(\d+)[.)]\s+", raw)
+    if len(pattern) > 2:
+        for i in range(1, len(pattern) - 1, 2):
+            num = pattern[i]
+            content = pattern[i + 1].strip()
+            if content:
+                questions.append({"번호": num, "내용": content[:500]})
+    return questions
+
+
+def _render_question_solver_ui(
+    provider: str, model: str, api_key: str,
+) -> None:
+    """
+    세션에 저장된 문제 목록을 카드로 렌더링하고
+    문제별 '풀이하기' 버튼 → 개별 AI 풀이를 제공합니다.
+    """
+    questions: list[dict] = st.session_state.get("pdf_questions", [])
+    solutions: dict = st.session_state.setdefault("pdf_solutions", {})
+    content_text: str = st.session_state.get("pdf_content_text", "")
+    images_b64 = st.session_state.get("pdf_images_b64", None)
+    method = st.session_state.get("pdf_extraction_method", "text")
+    filename = st.session_state.get("pdf_filename", "문서")
+
+    if not questions:
+        return
+
+    # 헤더
+    badge_color = "#10b981" if method == "text" else "#f59e0b"
+    badge_label = "📝 텍스트" if method == "text" else "🖼️ 비전 AI"
+    st.markdown(
+        f'<span style="background:{badge_color}22;border:1px solid {badge_color};'
+        f'border-radius:6px;padding:3px 10px;font-size:0.8rem;color:{badge_color};">'
+        f'{badge_label}</span>'
+        f'&nbsp;&nbsp;<b style="color:#94a3b8;font-size:0.9rem;">{filename}</b>',
+        unsafe_allow_html=True,
+    )
+
+    solved_count = len(solutions)
+    st.markdown(
+        f"### 🔢 감지된 문제 — {len(questions)}개 "
+        f"<span style='color:#10b981;font-size:0.85rem;'>({solved_count}개 풀이 완료)</span>",
+        unsafe_allow_html=True,
+    )
+
+    # 전체 풀이 / 초기화 버튼
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 2])
+    with ctrl_col1:
+        if st.button("⚡ 전체 문제 풀이", key="solve_all_btn", use_container_width=True):
+            st.session_state.pdf_solve_all = True
+    with ctrl_col2:
+        if st.button("🗑️ 풀이 초기화", key="clear_solutions_btn", use_container_width=True):
+            st.session_state.pdf_solutions = {}
+            st.rerun()
+    with ctrl_col3:
+        if st.button("🔄 문제 재추출", key="reextract_btn", use_container_width=True):
+            for k in ("pdf_questions", "pdf_solutions", "pdf_solve_all"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    st.divider()
+
+    # 전체 풀이 모드 처리
+    if st.session_state.get("pdf_solve_all"):
+        unsolved = [i for i in range(len(questions)) if i not in solutions]
+        if unsolved:
+            prog = st.progress(0, text="전체 풀이 진행 중...")
+            for step, idx in enumerate(unsolved):
+                q = questions[idx]
+                prog.progress((step + 1) / len(unsolved),
+                              text=f"문제 {q['번호']} 풀이 중... ({step+1}/{len(unsolved)})")
+                sol = _solve_single_question(
+                    q, content_text, images_b64, provider, model, api_key, filename
+                )
+                solutions[idx] = sol
+            prog.empty()
+        st.session_state.pdf_solve_all = False
+        st.rerun()
+
+    # 문제 카드
+    for i, q in enumerate(questions):
+        solved = i in solutions
+
+        card_border = "#10b981" if solved else "#334155"
+        card_bg = "#0d1f1a" if solved else "#0f172a"
+        st.markdown(
+            f'<div style="border:1px solid {card_border};border-radius:12px;'
+            f'background:{card_bg};padding:16px 20px;margin-bottom:10px;">',
+            unsafe_allow_html=True,
+        )
+
+        q_col, btn_col = st.columns([5, 1])
+        with q_col:
+            # 문제 번호 배지 + 내용 (길면 expander)
+            st.markdown(
+                f'<div style="display:flex;align-items:flex-start;gap:12px;">'
+                f'<span style="background:#4f46e5;color:white;border-radius:6px;'
+                f'padding:2px 10px;font-weight:700;font-size:0.85rem;white-space:nowrap;">'
+                f'{q["번호"]}번</span>'
+                f'<span style="color:#e2e8f0;font-size:0.95rem;">{q["내용"][:200]}'
+                f'{"..." if len(q["내용"]) > 200 else ""}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with btn_col:
+            btn_label = "✅ 재풀이" if solved else "📖 풀이"
+            if st.button(btn_label, key=f"solve_q_{i}", use_container_width=True):
+                with st.spinner(f"문제 {q['번호']} 풀이 생성 중..."):
+                    sol = _solve_single_question(
+                        q, content_text, images_b64, provider, model, api_key, filename
+                    )
+                solutions[i] = sol
+                st.rerun()
+
+        # 풀이 결과 표시
+        if solved:
+            with st.expander(f"📐 문제 {q['번호']} 풀이 보기", expanded=True):
+                st.markdown(solutions[i])
+                dl_col1, dl_col2 = st.columns([1, 1])
+                with dl_col1:
+                    st.download_button(
+                        "💾 MD 저장",
+                        data=solutions[i].encode('utf-8-sig'),
+                        file_name=f"solution_q{i+1}.md",
+                        mime="text/markdown",
+                        key=f"dl_sol_{i}",
+                        use_container_width=True,
+                    )
+                with dl_col2:
+                    pdf_bytes = make_pdf_bytes(solutions[i])
+                    if pdf_bytes:
+                        st.download_button(
+                            "💾 PDF 저장",
+                            data=pdf_bytes,
+                            file_name=f"solution_q{i+1}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_sol_pdf_{i}",
+                            use_container_width=True,
+                        )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 풀이 전체 저장
+    if solutions:
+        all_sols = "\n\n---\n\n".join(
+            f"## 문제 {questions[i]['번호']}\n{questions[i]['내용']}\n\n### 풀이\n{sol}"
+            for i, sol in sorted(solutions.items())
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "💾 전체 풀이 저장 (.md)",
+                data=all_sols.encode('utf-8-sig'),
+                file_name="all_solutions.md",
+                mime="text/markdown",
+                key="dl_all_solutions",
+                use_container_width=True,
+            )
+        with col2:
+            pdf_bytes = make_pdf_bytes(all_sols)
+            if pdf_bytes:
+                st.download_button(
+                    "💾 전체 풀이 저장 (.pdf)",
+                    data=pdf_bytes,
+                    file_name="all_solutions.pdf",
+                    mime="application/pdf",
+                    key="dl_all_solutions_pdf",
+                    use_container_width=True,
+                )
+
+
+def _solve_single_question(
+    q: dict,
+    content_text: str,
+    images_b64: list[str] | None,
+    provider: str, model: str, api_key: str,
+    filename: str,
+) -> str:
+    """단일 문제에 대한 상세 풀이를 AI에 요청합니다."""
+    # 컨텍스트: 문제 주변 내용만 잘라서 전송 (토큰 절약)
+    # 문제 내용이 텍스트에 있으면 앞뒤 2000자만 추출
+    context = ""
+    if content_text:
+        needle = q["내용"][:50]  # 문제 앞부분으로 검색
+        idx = content_text.find(needle)
+        if idx >= 0:
+            start = max(0, idx - 500)
+            end = min(len(content_text), idx + 2000)
+            context = content_text[start:end]
+        else:
+            # 못 찾으면 전체 텍스트 앞 3000자만
+            context = content_text[:3000]
+
+    system = (
+        "당신은 한국의 수학·과학·인문 교육 전문가 AI입니다.\n"
+        "학생이 제출한 시험 문제를 받아 명확하고 단계적인 풀이를 제공합니다.\n\n"
+        "풀이 형식:\n"
+        "1. **문제 파악**: 무엇을 구해야 하는지 확인\n"
+        "2. **관련 개념/공식**: 적용할 이론이나 공식 제시\n"
+        "3. **단계별 풀이**: 논리적 순서로 상세하게\n"
+        "4. **최종 답**: 박스나 굵은 글씨로 강조\n"
+        "5. **핵심 포인트**: 이 문제에서 틀리기 쉬운 부분 안내\n\n"
+        "항상 한국어로 답변하세요."
+    )
+
+    user_prompt = (
+        f"[문서: {filename}]\n\n"
+        f"**문제 {q['번호']}번**\n{q['내용']}\n\n"
+    )
+    if context:
+        user_prompt += f"[문서 내 관련 컨텍스트]\n{context}\n\n"
+    user_prompt += "이 문제를 단계별로 자세히 풀어주세요."
+
+    return call_ai(system, user_prompt, provider, model, api_key,
+                   images_b64=images_b64 if not context else None)
+
+
+def render_pdf_analyzer() -> None:
+    """📑 기능 6: PDF 문서 분석기 (문제별 개별 풀이 지원)"""
+    provider, model, api_key = get_session_config()
+    st.header("📑 PDF 문서 분석기")
+    st.caption("시험지·교재 PDF 업로드 → 문제 자동 감지 → 문제별 개별 풀이")
+
+    if not _PYPDF_OK and not _FITZ_OK:
+        st.error("❌ PDF 처리 라이브러리가 없습니다. `pip install pypdf pymupdf`를 실행하세요.")
+        return
+
+    # ── 이미 문제가 추출된 상태: 문제 카드 UI 우선 렌더링 ──────
+    if st.session_state.get("pdf_questions"):
+        with st.sidebar:
+            with st.expander("📑 현재 PDF", expanded=False):
+                st.caption(st.session_state.get("pdf_filename", ""))
+                if st.button("📂 새 PDF 열기", key="open_new_pdf"):
+                    for k in ("pdf_questions", "pdf_solutions", "pdf_content_text",
+                              "pdf_images_b64", "pdf_filename", "pdf_extraction_method",
+                              "pdf_solve_all"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
+        _render_question_solver_ui(provider, model, api_key)
+        return
+
+    # ── 업로드 & 분석 설정 UI ────────────────────────────────────
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        uploaded = st.file_uploader(
+            "PDF 파일 업로드 (최대 50MB)",
+            type=["pdf"],
+            key="pdf_upload",
+        )
+
+        analysis_type = st.selectbox(
+            "분석 유형",
+            [
+                "🔢 문제별 개별 풀이  ← 권장 (컨텍스트 제한 우회)",
+                "📋 전체 내용 요약",
+                "🔑 핵심 개념 및 키워드 추출",
+                "📝 학습 자료 / 노트 생성",
+                "🔍 특정 내용 질의응답",
+            ],
+            key="pdf_analysis_type",
+        )
+
+        custom_question = ""
+        if analysis_type.startswith("🔍"):
+            custom_question = st.text_area(
+                "질문 입력",
+                placeholder="예: 이 문서에서 광합성 단계를 설명하는 부분을 요약해줘.",
+                height=100,
+                key="pdf_question",
+            )
+
+        page_range = st.text_input(
+            "분석할 페이지 범위 (선택, 비워두면 전체)",
+            placeholder="예: 1-10  또는  3,7,12",
+            key="pdf_page_range",
+        )
+
+    with col2:
+        if uploaded:
+            file_bytes = uploaded.read()
+            file_size_mb = len(file_bytes) / 1_048_576
+
+            page_count = 0
+            if _PYPDF_OK:
+                try:
+                    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                    page_count = len(reader.pages)
+                except Exception:
+                    pass
+
+            is_question_mode = analysis_type.startswith("🔢")
+
+            st.markdown(
+                f"""
+                <div style='background:#1e293b;border:1px solid #334155;
+                border-radius:10px;padding:16px;margin-bottom:12px;'>
+                <b>📄 {uploaded.name}</b><br>
+                <small style='color:#94a3b8;'>크기: {file_size_mb:.1f} MB
+                {'| 총 ' + str(page_count) + ' 페이지' if page_count else ''}
+                {'| 🔢 문제별 풀이 모드' if is_question_mode else ''}</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            btn_label = "🔢 문제 추출 & 풀이 시작" if is_question_mode else "🔍 PDF 분석 시작"
+            if st.button(btn_label, key="btn_pdf_analyze", use_container_width=True):
+                _run_pdf_analysis(
+                    file_bytes, uploaded.name, page_count,
+                    analysis_type, custom_question, page_range,
+                    provider, model, api_key,
+                )
+        else:
+            st.markdown(
+                """
+                <div style='background:#0f172a;border:2px dashed #334155;
+                border-radius:12px;padding:40px;text-align:center;color:#64748b;'>
+                <div style='font-size:3rem;margin-bottom:12px;'>📑</div>
+                <b>PDF 파일을 왼쪽에 업로드하세요</b><br>
+                <small>시험지·교재·학습자료 등 지원</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.expander("ℹ️ 문제별 풀이 모드 안내", expanded=True):
+                st.markdown(f"""
+**🔢 문제별 개별 풀이 (권장)**
+- PDF에서 문제를 자동 감지해 목록 생성
+- 각 문제마다 **[풀이하기]** 버튼 제공
+- 문제 하나씩 AI에 요청 → **컨텍스트 제한 우회**
+- 전체 풀이 한 번에, 또는 원하는 것만 선택 가능
+
+**📄 일반 분석 모드**
+- 전체 내용 요약 / 개념 추출 / 학습자료 생성 등
+- 비전 처리 시 최대 **{_PDF_MAX_IMAGE_PAGES}페이지** 분석
+""")
+
+
+def _run_pdf_analysis(
+    file_bytes: bytes,
+    filename: str,
+    page_count: int,
+    analysis_type: str,
+    custom_question: str,
+    page_range: str,
+    provider: str,
+    model: str,
+    api_key: str,
+) -> None:
+    """PDF 분석 실행: 문제별 모드와 일반 모드로 분기."""
+
+    # ── 공통: 텍스트/이미지 추출 ────────────────────────────────
+    with st.status("📄 PDF 내용 추출 중...", expanded=True) as status:
+        st.write("📝 텍스트 추출 시도 중...")
+        content_text, images_b64, method = _pdf_extract_content(
+            file_bytes, page_count, page_range
+        )
+        if method == "text":
+            st.write(f"✅ 텍스트 추출 완료 ({len(content_text):,}자)")
+        elif method == "vision":
+            st.write(f"🖼️ 이미지 변환 완료 ({len(images_b64)}페이지)")
+        else:
+            st.write("⚠️ 텍스트 품질 낮음, 가능한 범위에서 진행")
+
+        # ── 문제별 풀이 모드 ─────────────────────────────────────
+        if analysis_type.startswith("🔢"):
+            st.write("🔍 AI가 문제 목록 추출 중...")
+
+            q_system = (
+                "당신은 시험지 분석 전문가입니다.\n"
+                "제공된 문서에서 모든 시험/연습 문제를 찾아 정확히 반환하세요.\n"
+                "반드시 아래 JSON 배열 형식만 출력하세요. 다른 텍스트는 금지입니다:\n"
+                '[{"번호":"1","내용":"문제 전체 텍스트"},{"번호":"2","내용":"..."}]'
+            )
+            q_prompt = (
+                "첨부된 문서(파일 또는 이미지)에서 기재된 모든 시험 문항이나 연습 문제를 찾아 "
+                "JSON 배열 형식으로만 반환하세요. JSON 외의 부가적인 인사말이나 마크다운 설명은 일절 생략하세요.\n"
+                "문제가 없다면 빈 배열 []을 반환하세요.\n\n"
+            )
+            if content_text:
+                q_prompt += f"[문서 내용]\n{content_text[:100000]}"
+            else:
+                q_prompt += "[참고]: 문서 텍스트가 부족하여 첨부된 이미지를 대신 분석해야 합니다."
+
+            debug_raw_responses = []
+            try:
+                questions = []
+                images_list = images_b64 if images_b64 else []
+                if images_list:
+                    chunk_size = _PDF_MAX_IMAGE_PAGES
+                    for i in range(0, len(images_list), chunk_size):
+                        chunk = images_list[i:i+chunk_size]
+                        st.write(f"🔍 이미지에서 문제 목록 추출 중... ({i+1}~{min(i+chunk_size, len(images_list))}장)")
+                        raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=chunk)
+                        debug_raw_responses.append(raw_qs)
+                        _, clean_qs = parse_thinking_response(raw_qs)
+                        questions.extend(_parse_question_list(clean_qs or raw_qs))
+                else:
+                    raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=None)
+                    debug_raw_responses.append(raw_qs)
+                    _, clean_qs = parse_thinking_response(raw_qs)
+                    questions = _parse_question_list(clean_qs or raw_qs)
+            except Exception as e:
+                st.error(f"❌ 문제 추출 실패: {e}")
+                status.update(label="실패", state="error")
+                return
+
+            if not questions:
+                with st.expander("🛠 디버그: AI 원본 응답 확인", expanded=True):
+                    for idx, r in enumerate(debug_raw_responses):
+                        st.text(f"--- Chunk {idx+1} Raw Output ---\n{r}")
+                st.warning("⚠️ 문제를 감지하지 못했습니다. AI가 반환한 위 디버그 텍스트를 확인해주세요.")
+                status.update(label="문제 미감지", state="error")
+                return
+
+            # 세션에 저장
+            st.session_state.pdf_questions = questions
+            st.session_state.pdf_solutions = {}
+            st.session_state.pdf_content_text = content_text
+            st.session_state.pdf_images_b64 = images_b64
+            st.session_state.pdf_extraction_method = method
+            st.session_state.pdf_filename = filename
+            st.session_state.pop("pdf_solve_all", None)
+
+            st.write(f"✅ {len(questions)}개 문제 감지 완료!")
+            status.update(label=f"✅ {len(questions)}개 문제 감지!", state="complete", expanded=False)
+            st.rerun()
+            return
+
+        # ── 일반 분석 모드 ────────────────────────────────────────
+        type_label = analysis_type.split(" ", 1)[1]
+        st.write(f"🤖 AI 분석 중 ({method})...")
+
+        content_for_prompt = content_text or f"{filename}의 이미지를 분석해주세요."
+
+        if analysis_type.startswith("🔍") and custom_question.strip():
+            user_prompt = (
+                f"다음 문서에 대해 질문에 답해주세요.\n\n"
+                f"[질문]: {custom_question}\n\n[문서 내용]:\n{content_for_prompt}"
+            )
+        else:
+            user_prompt = (
+                f"다음 PDF 문서({filename})에 대해 [{type_label}]을 수행해주세요.\n\n"
+                f"[문서 내용]:\n{content_for_prompt}"
+            )
+
+        system = (
+            "당신은 한국의 교육 전문가 AI입니다.\n"
+            "제공된 PDF 문서를 분석하여 교사와 학생에게 유용한 정보를 한국어로 제공합니다.\n"
+            "항상 한국어로 답변하세요."
+        )
+
+        try:
+            analysis_images = images_b64
+            if images_b64 and len(images_b64) > _PDF_MAX_IMAGE_PAGES:
+                st.warning(f"⚠️ 일반 분석 모드에서는 컨텍스트 제한으로 앞의 {_PDF_MAX_IMAGE_PAGES}장 이미지만 분석됩니다. 모든 페이지 문제를 추출하려면 '문제별 풀이' 모드를 활용하세요.")
+                analysis_images = images_b64[:_PDF_MAX_IMAGE_PAGES]
+
+            result = call_ai(system, user_prompt, provider, model, api_key,
+                             images_b64=analysis_images)
+            status.update(label="✅ 분석 완료!", state="complete", expanded=False)
+            
+            # 일반 결과 세션에 저장
+            st.session_state.pdf_general_result = result
+            st.session_state.pdf_general_method = method
+            st.session_state.pdf_general_type = type_label
+            st.session_state.pdf_filename = filename
+            st.session_state.pdf_content_text = content_text
+        except Exception as e:
+            st.error(f"❌ AI 분석 오류: {e}")
+            status.update(label="분석 실패", state="error")
+            return
+
+def _render_pdf_general_result() -> None:
+    """PDF 일반 분석 결과를 UI에 표시하고 다운로드 버튼 지원"""
+    if "pdf_general_result" not in st.session_state:
+        return
+        
+    result = st.session_state.pdf_general_result
+    method = st.session_state.pdf_general_method
+    type_label = st.session_state.pdf_general_type
+    filename = st.session_state.pdf_filename
+    content_text = st.session_state.get("pdf_content_text", "")
+
+    # 결과 출력
+    badge_color = "#10b981" if method == "text" else "#f59e0b"
+    badge_label = "📝 텍스트 추출" if method == "text" else "🖼️ 비전 AI"
+    st.markdown(
+        f'<span style="background:{badge_color}22;border:1px solid {badge_color};'
+        f'border-radius:6px;padding:3px 10px;font-size:0.8rem;color:{badge_color};">'
+        f'{badge_label}</span>',
+        unsafe_allow_html=True,
+    )
+    st.subheader(f"📋 {type_label} 결과")
+    st.markdown(result)
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.download_button("💾 결과 저장 (.md)", data=result.encode('utf-8-sig'),
+                           file_name="pdf_analysis_result.md", mime="text/markdown",
+                           key="dl_pdf_md_gen", use_container_width=True)
+    with col_b:
+        pdf_bytes = make_pdf_bytes(result)
+        if pdf_bytes:
+            st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
+                               file_name="pdf_analysis_result.pdf", mime="application/pdf",
+                               key="dl_pdf_pdf_gen", use_container_width=True)
+    with col_c:
+        if method == "text" and content_text:
+            st.download_button("💾 추출 텍스트 저장 (.txt)", data=content_text.encode('utf-8-sig'),
+                               file_name="extracted_text.txt", mime="text/plain",
+                               key="dl_pdf_txt_gen", use_container_width=True)
+
+
+
+    # ── 입력 영역 ─────────────────────────────────────────────
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        uploaded = st.file_uploader(
+            "PDF 파일 업로드 (최대 50MB)",
+            type=["pdf"],
+            key="pdf_upload",
+        )
+
+        analysis_type = st.selectbox(
+            "분석 유형",
+            [
+                "📋 전체 내용 요약",
+                "🔑 핵심 개념 및 키워드 추출",
+                "📝 학습 자료 / 노트 생성",
+                "❓ 예상 시험 문제 생성",
+                "🔍 특정 내용 질의응답",
+            ],
+            key="pdf_analysis_type",
+        )
+
+        # '특정 내용 질의응답' 선택 시 추가 질문 입력
+        custom_question = ""
+        if analysis_type.startswith("🔍"):
+            custom_question = st.text_area(
+                "질문 입력",
+                placeholder="예: 이 문서에서 광합성의 단계를 설명하는 부분을 찾아 요약해줘.",
+                height=100,
+                key="pdf_question",
+            )
+
+        page_range = st.text_input(
+            "분석할 페이지 범위 (선택, 비워두면 전체)",
+            placeholder="예: 1-10  또는  3,7,12",
+            key="pdf_page_range",
+        )
+
+    with col2:
+        if uploaded:
+            file_bytes = uploaded.read()
+            file_size_mb = len(file_bytes) / 1_048_576
+
+            # ── PDF 정보 표시 ──────────────────────────────────
+            page_count = 0
+            if _PYPDF_OK:
+                try:
+                    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                    page_count = len(reader.pages)
+                except Exception:
+                    pass
+
+            st.markdown(
+                f"""
+                <div style='background:#1e293b;border:1px solid #334155;
+                border-radius:10px;padding:16px;margin-bottom:12px;'>
+                <b>📄 {uploaded.name}</b><br>
+                <small style='color:#94a3b8;'>크기: {file_size_mb:.1f} MB
+                {'| 총 ' + str(page_count) + ' 페이지' if page_count else ''}</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if st.button("🔍 PDF 분석 시작", key="btn_pdf_analyze", use_container_width=True):
+                # 기존 렌더링 초기화
+                st.session_state.pop("pdf_general_result", None)
+                _run_pdf_analysis(
+                    file_bytes, uploaded.name, page_count,
+                    analysis_type, custom_question, page_range,
+                    provider, model, api_key,
+                )
+            
+            _render_pdf_general_result()
+        else:
+            # 업로드 안내 카드
+            st.markdown(
+                """
+                <div style='background:#0f172a;border:2px dashed #334155;
+                border-radius:12px;padding:40px;text-align:center;color:#64748b;'>
+                <div style='font-size:3rem;margin-bottom:12px;'>📑</div>
+                <b>PDF 파일을 왼쪽에 업로드하세요</b><br>
+                <small>교재·논문·학습자료·시험지 등 지원</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+
+
+
+
+# ────────────────────────────────────────────────────────────
+# 사이드바 렌더링
+# ────────────────────────────────────────────────────────────
+
+
+
+
+def render_sidebar() -> str:
+    """
+    사이드바에서 프로바이더·모델·API 키를 설정하고 선택된 기능 이름을 반환.
+    세션 상태: provider, model, api_key
+    """
+    with st.sidebar:
+        st.markdown('<div class="app-title">🎓 AI 교육 도우미</div>',
+                    unsafe_allow_html=True)
+        st.markdown('<div class="app-subtitle">한국 교육자를 위한 멀티 AI 플랫폼</div>',
+                    unsafe_allow_html=True)
+        st.divider()
+
+        # ── 기능 선택 ────────────────────────────────────────
+        feature = st.radio("🔧 기능 선택", [
+            "📸 이미지 문제 분석기",
+            "📑 PDF 문서 분석기",
+            "🧠 단계별 풀이 생성기",
+            "📄 교안 생성기",
+            "📝 평가문항 생성기",
+            "💬 교육 상담 챗봇",
+        ], key="selected_feature")
+
+        st.divider()
+
+        # ── 프로바이더 선택 ──────────────────────────────────
+        st.markdown("**🌐 AI 프로바이더 선택**")
+        st.radio("AI 프로바이더", P.ALL, key="provider", label_visibility="collapsed")
+        provider = st.session_state.provider  # 위젯이 관리하므로 읽기만 함
+
+        st.divider()
+
+        # ── 프로바이더별 설정 ────────────────────────────────
+        if provider == P.LMSTUDIO:
+            _render_lmstudio_config()
+        else:
+            _render_cloud_config(provider)
+
+        st.divider()
+        st.markdown(
+            "<small style='color:#475569;'>멀티 프로바이더 AI 교육 도우미<br>"
+            "LM Studio · OpenAI · Gemini · Claude</small>",
+            unsafe_allow_html=True,
+        )
+
+    return feature
+
+
+def _render_lmstudio_config() -> None:
+    """LM Studio 전용 설정 패널."""
+    st.markdown("**⚙️ LM Studio 연결**")
+
+    # 세션 캐시 활용 (매 렌더링마다 ping 방지)
+    if ("lm_connected" not in st.session_state or
+            st.sidebar.button("🔄 새로고침", key="lm_refresh")):
+        with st.spinner("연결 확인 중..."):
+            ok, default_model, all_models = check_lmstudio_connection()
+        st.session_state.lm_connected = ok
+        st.session_state.lm_default_model = default_model
+        st.session_state.lm_all_models = all_models
+
+    ok = st.session_state.lm_connected
+    all_models = st.session_state.get("lm_all_models", [])
+
+    if ok:
+        st.markdown('<div class="status-badge status-ok">🟢 연결됨</div>',
+                    unsafe_allow_html=True)
+        default_model = st.session_state.lm_default_model
+        options = all_models if all_models else [default_model]
+        model = st.selectbox("모델 선택", options,
+                             index=0 if default_model not in options
+                             else options.index(default_model),
+                             key="lm_model_select")
+        st.session_state.model = model
+        st.session_state.api_key = ""
+    else:
+        st.markdown('<div class="status-badge status-err">🔴 연결 안됨</div>',
+                    unsafe_allow_html=True)
+        st.warning("LM Studio를 실행하고 모델을 로드한 후 '새로고침'을 눌러주세요.")
+        st.session_state.model = LMSTUDIO_PREFERRED[0]
+        st.session_state.api_key = ""
+
+
+def _render_cloud_config(provider: str) -> None:
+    """OpenAI / Gemini / Claude 공통 설정 패널."""
+    hint_url, hint_prefix = PROVIDER_KEY_HINTS[provider]
+    provider_name = provider.split(" ", 1)[1]  # 이모지 제거
+
+    st.markdown(f"**🔑 {provider_name} API 키**")
+
+    # 저장된 키 불러오기
+    session_key = f"api_key_{provider}"
+    saved_key = st.session_state.get(session_key, "")
+
+    api_key = st.text_input(
+        "API 키 입력",
+        value=saved_key,
+        type="password",
+        placeholder=hint_prefix,
+        key=f"api_key_input_{provider}",
+        label_visibility="collapsed",
+    )
+    st.markdown(
+        f"<small>🔗 <a href='{hint_url}' target='_blank'>API 키 발급받기</a></small>",
+        unsafe_allow_html=True,
+    )
+
+    if api_key:
+        st.session_state[session_key] = api_key
+        st.session_state.api_key = api_key
+        # API 키 유효성 간단 검사
+        if provider == P.OPENAI and not api_key.startswith("sk-"):
+            st.warning("⚠️ OpenAI API 키는 'sk-'로 시작합니다.")
+        elif provider == P.CLAUDE and not api_key.startswith("sk-ant-"):
+            st.warning("⚠️ Claude API 키는 'sk-ant-'로 시작합니다.")
+    else:
+        st.session_state.api_key = ""
+        st.info(f"ℹ️ API 키를 입력하면 {provider_name}을 사용할 수 있습니다.")
+
+    # 모델 선택
+    st.markdown("**🤖 모델 선택**")
+    models = PROVIDER_MODELS[provider]
+    model = st.selectbox("", models, key=f"model_select_{provider}",
+                         label_visibility="collapsed")
+    st.session_state.model = model
+
+    # 연결 상태 표시 (API 키 유무 기반)
+    if api_key:
+        st.markdown('<div class="status-badge status-ok">🟢 API 키 설정됨</div>',
+                    unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="status-badge status-err">🔴 API 키 필요</div>',
+                    unsafe_allow_html=True)
+
+
+# ────────────────────────────────────────────────────────────
+# 메인
+# ────────────────────────────────────────────────────────────
+
+def main() -> None:
+    st.set_page_config(
+        page_title="AI 교육 도우미",
+        page_icon="🎓",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+    }
+    [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+    [data-testid="stSidebar"] a { color: #818cf8 !important; }
+
+    .app-title {
+        font-size: 1.6rem; font-weight: 700;
+        background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        text-align: center; margin-bottom: 0.2rem;
+    }
+    .app-subtitle {
+        font-size: 0.78rem; color: #94a3b8; text-align: center; margin-bottom: 0.8rem;
+    }
+
+    .status-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 12px; border-radius: 999px;
+        font-size: 0.78rem; font-weight: 600; margin-top: 6px;
+    }
+    .status-ok  { background: rgba(16,185,129,.15); border: 1px solid #10b981; color: #6ee7b7; }
+    .status-err { background: rgba(239,68,68,.15);  border: 1px solid #ef4444; color: #fca5a5; }
+
+    .stButton > button {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white; border: none; border-radius: 10px;
+        padding: .6rem 1.2rem; font-weight: 600; font-size: .95rem;
+        transition: all .2s ease;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #4338ca, #6d28d9);
+        transform: translateY(-1px); box-shadow: 0 4px 20px rgba(79,70,229,.4);
+    }
+
+    /* 프로바이더 라디오 강조 */
+    [data-testid="stSidebar"] .stRadio > div { gap: 4px; }
+    [data-testid="stSidebar"] .stRadio label {
+        font-size: .9rem; padding: 4px 0; cursor: pointer;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    feature = render_sidebar()
+
+    # 클라우드 프로바이더인데 API 키가 없을 경우 경고
+    provider = st.session_state.get("provider", P.LMSTUDIO)
+    api_key  = st.session_state.get("api_key", "")
+
+    if provider != P.LMSTUDIO and not api_key:
+        st.warning(
+            f"⚠️ {provider} 사용을 위해 사이드바에서 API 키를 입력해주세요.\n\n"
+            "API 키는 세션 동안만 메모리에 저장되며 어디에도 기록되지 않습니다.",
+            icon="🔑"
+        )
+
+    # LM Studio인데 연결 안 됨
+    if provider == P.LMSTUDIO and not st.session_state.get("lm_connected", True):
+        st.error("⚠️ LM Studio에 연결할 수 없습니다. LM Studio를 실행하고 모델을 로드해주세요.")
+
+    # 기능 라우팅
+    if feature == "📸 이미지 문제 분석기":
+        render_image_analyzer()
+    elif feature == "📑 PDF 문서 분석기":
+        render_pdf_analyzer()
+    elif feature == "🧠 단계별 풀이 생성기":
+        render_step_solver()
+    elif feature == "📄 교안 생성기":
+        render_lesson_plan()
+    elif feature == "📝 평가문항 생성기":
+        render_quiz_generator()
+    elif feature == "💬 교육 상담 챗봇":
+        render_chatbot()
+
+
+if __name__ == "__main__":
+    main()
