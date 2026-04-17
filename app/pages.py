@@ -211,16 +211,17 @@ def render_lesson_plan() -> None:
     with col1:
         subject = st.selectbox("과목",
             ["국어", "영어", "수학", "과학", "사회", "역사", "도덕",
-             "음악", "미술", "체육", "기술·가정", "기타"], key="plan_subject")
+             "음악", "미술", "체육", "기술·가정", "프로그래밍", "기타"], key="plan_subject")
         grade = st.selectbox("학년",
             ["초등 1학년", "초등 2학년", "초등 3학년", "초등 4학년", "초등 5학년", "초등 6학년",
              "중학 1학년", "중학 2학년", "중학 3학년",
-             "고등 1학년", "고등 2학년", "고등 3학년"], key="plan_grade")
+             "고등 1학년", "고등 2학년", "고등 3학년",
+             "대학교 1학년", "대학교 2학년", "대학교 3학년", "대학교 4학년"], key="plan_grade")
         unit_name = st.text_input("단원명", placeholder="예: 1단원. 문학의 빛깔",
                                   key="plan_unit")
         duration = st.number_input("수업 시간 (분)", min_value=10, max_value=120,
                                    value=45, step=5, key="plan_duration")
-        up = st.file_uploader("📄 참고 자료 PDF 업로드 (선택)", type=["pdf"], key="plan_pdf_upload")
+        ups = st.file_uploader("📄 참고 자료 PDF 업로드 (다중 선택 가능)", type=["pdf"], key="plan_pdf_upload", accept_multiple_files=True)
     with col2:
         plan_type = st.selectbox("교안 유형",
             ["📋 수업 지도안", "📝 학습 활동지", "📊 평가 계획서"], key="plan_type")
@@ -237,25 +238,28 @@ def render_lesson_plan() -> None:
             return
             
         pdf_content = ""
+        all_images = []
+        if ups:
+            with st.spinner(f"📄 PDF {len(ups)}개 분석 중..."):
+                for up in ups:
+                    file_bytes = up.read()
+                    page_count = 0
+                    if _PYPDF_OK:
+                        try:
+                            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                            page_count = len(reader.pages)
+                        except Exception: pass
+                    
+                    text, images, method = _pdf_extract_content(file_bytes, page_count, "")
+                    if text.strip():
+                        pdf_content += f"\n\n[파일: {up.name}]\n{text}"
+                    if images:
+                        all_images.extend(images)
+
         img_list = None
-        if up:
-            with st.spinner("📄 PDF 분석 중..."):
-                file_bytes = up.read()
-                page_count = 0
-                if _PYPDF_OK:
-                    try:
-                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-                        page_count = len(reader.pages)
-                    except Exception:
-                        pass
-                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
-                if extr_method == "text" and extracted_text.strip():
-                    pdf_content = extracted_text
-                else:
-                    max_p = get_max_pdf_pages(provider)
-                    img_list = extracted_images if extracted_images else None
-                    if img_list and len(img_list) > max_p:
-                        img_list = img_list[:max_p]
+        if all_images:
+            max_p = get_max_pdf_pages(provider)
+            img_list = all_images[:max_p]
 
         type_label = plan_type.split(" ", 1)[1]
         user_prompt = (f"다음 정보를 바탕으로 [{type_label}]을 작성해주세요.\n\n"
@@ -286,10 +290,10 @@ def render_lesson_plan() -> None:
         
         # 파일명 접두어 준비
         base_name = "lesson_plan"
-        if st.session_state.get("plan_img_upload"):
-             base_name = os.path.splitext(st.session_state.plan_img_upload.name)[0]
-        elif st.session_state.get("plan_pdf_upload"):
-             base_name = os.path.splitext(st.session_state.plan_pdf_upload.name)[0]
+        if st.session_state.get("plan_pdf_upload"):
+             # 다중 업로드일 경우 첫 번째 파일명 활용
+             first_up = st.session_state.plan_pdf_upload[0] if isinstance(st.session_state.plan_pdf_upload, list) else st.session_state.plan_pdf_upload
+             base_name = os.path.splitext(first_up.name)[0]
         base_name = safe_filename(base_name)
         
         dl_col1, dl_col2 = st.columns([1, 1])
@@ -315,19 +319,20 @@ def render_quiz_generator() -> None:
     method = st.radio("입력 방식", ["✏️ 텍스트 입력", "📷 자료 이미지 업로드", "📄 PDF 문서 업로드"],
                       horizontal=True, key="quiz_input_method")
     content_text = ""
-    up = None
+    ups = None
 
     if method == "✏️ 텍스트 입력":
         content_text = st.text_area("학습 내용",
             placeholder="예: 광합성은 식물이 빛 에너지를 이용하여...",
             height=180, key="quiz_text")
     elif method == "📷 자료 이미지 업로드":
-        up = st.file_uploader("교과서/자료 이미지 업로드", type=["png", "jpg", "jpeg"],
-                              key="quiz_img_upload")
-        if up:
-            st.image(up, use_container_width=True)
+        ups = st.file_uploader("교과서/자료 이미지 업로드 (다중 선택 가능)", type=["png", "jpg", "jpeg"],
+                              key="quiz_img_upload", accept_multiple_files=True)
+        if ups:
+            for up in ups:
+                st.image(up, use_container_width=True, caption=up.name)
     else:
-        up = st.file_uploader("관련 PDF 자료 업로드", type=["pdf"], key="quiz_pdf_upload")
+        ups = st.file_uploader("관련 PDF 자료 업로드 (다중 선택 가능)", type=["pdf"], key="quiz_pdf_upload", accept_multiple_files=True)
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -341,55 +346,73 @@ def render_quiz_generator() -> None:
                                       value="중", key="quiz_difficulty")
 
     if st.button("🎯 문항 생성", key="btn_quiz", use_container_width=True):
-        img_list = None
+        img_list = []
         if method == "✏️ 텍스트 입력":
             if not content_text.strip():
                 st.warning("⚠️ 학습 내용을 입력하세요.")
                 return
         elif method == "📷 자료 이미지 업로드":
-            if not up:
+            if not ups:
                 st.warning("⚠️ 이미지를 업로드하세요.")
                 return
-            img_b64 = encode_image_to_base64(up)
-            img_list = [img_b64]
+            for up in ups:
+                img_list.append(encode_image_to_base64(up))
             content_text = "업로드된 이미지의 학습 내용을 바탕으로 문항을 출제해주세요."
         else:
-            if not up:
+            if not ups:
                 st.warning("⚠️ PDF 자료를 업로드하세요.")
                 return
-            with st.spinner("📄 PDF 분석 중..."):
-                file_bytes = up.read()
-                page_count = 0
-                if _PYPDF_OK:
-                    try:
-                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-                        page_count = len(reader.pages)
-                    except Exception:
-                        pass
-                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
-                if extr_method == "text" and extracted_text.strip():
-                    content_text = extracted_text
-                else:
-                    max_p = get_max_pdf_pages(provider)
-                    img_list = extracted_images if extracted_images else None
-                    if img_list and len(img_list) > max_p:
-                        img_list = img_list[:max_p]
-                    content_text = "업로드된 PDF 문서의 내용을 바탕으로 문항을 출제해주세요."
+            with st.spinner(f"📄 PDF {len(ups)}개 분석 중..."):
+                for up in ups:
+                    file_bytes = up.read()
+                    page_count = 0
+                    if _PYPDF_OK:
+                        try:
+                            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                            page_count = len(reader.pages)
+                        except Exception: pass
+                    
+                    text, images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
+                    if text.strip():
+                        content_text += f"\n\n[파일: {up.name}]\n{text}"
+                    if images:
+                        img_list.extend(images)
+                
+            if not content_text.strip() and not img_list:
+                st.warning("⚠️ 자료에서 내용을 추출할 수 없습니다.")
+                return
+            
+            if not content_text.strip():
+                content_text = "업로드된 PDF 문서의 내용을 바탕으로 문항을 출제해주세요."
 
         if not q_types:
             st.warning("⚠️ 문항 유형을 하나 이상 선택하세요.")
             return
 
+        # 이미지 개수 제한
+        if img_list:
+            max_p = get_max_pdf_pages(provider)
+            img_list = img_list[:max_p]
+
         system = (("<|think|>\n" if provider == P.LMSTUDIO else "") +
                   SYSTEM_PROMPTS["quiz_generator"])
         
+        user_prompt = (f"다음 정보를 바탕으로 평가 문항을 생성해주세요.\n\n"
+                       f"문항 유형: {', '.join(q_types)}\n"
+                       f"문항 수: {num_q}\n"
+                       f"난이도: {difficulty}\n"
+                       f"학습자 상태: {st.session_state.get('user_mode', '학생')}\n")
+        
+        if content_text:
+            user_prompt += f"\n[학습 내용]\n{content_text[:15000]}"
+
         user_mode = st.session_state.get("user_mode", "👩‍🏫 교육자용")
         full_prompt = f"[{user_mode} 관점에서 문항 출제]\n\n{user_prompt}"
         
         try:
             with st.spinner("🤖 AI가 평가 문항을 출제하는 중..."):
                 result = call_ai(system, full_prompt, provider, model, api_key,
-                                 images_b64=img_list)
+                                 images_b64=img_list if img_list else None)
             thinking, final = parse_thinking_response(result)
             st.session_state.quiz_gen_thinking = thinking
             st.session_state.quiz_gen_final = final
@@ -411,10 +434,12 @@ def render_quiz_generator() -> None:
         
         # 파일명 접두어 준비
         base_name = "quiz_questions"
-        if st.session_state.get("quiz_img_upload"):
-            base_name = os.path.splitext(st.session_state.quiz_img_upload.name)[0]
-        elif st.session_state.get("quiz_pdf_upload"):
-            base_name = os.path.splitext(st.session_state.quiz_pdf_upload.name)[0]
+        if st.session_state.get("quiz_pdf_upload"):
+             first_up = st.session_state.quiz_pdf_upload[0] if isinstance(st.session_state.quiz_pdf_upload, list) else st.session_state.quiz_pdf_upload
+             base_name = os.path.splitext(first_up.name)[0]
+        elif st.session_state.get("quiz_img_upload"):
+             first_up = st.session_state.quiz_img_upload[0] if isinstance(st.session_state.quiz_img_upload, list) else st.session_state.quiz_img_upload
+             base_name = os.path.splitext(first_up.name)[0]
         base_name = safe_filename(base_name)
             
         dl_col1, dl_col2 = st.columns([1, 1])
@@ -423,7 +448,7 @@ def render_quiz_generator() -> None:
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="dl_quiz", use_container_width=True)
         with dl_col2:
-            pdf_bytes = make_pdf_bytes(st.session_state.quiz_gen_final) # Already clean but make_pdf_bytes handles it safely
+            pdf_bytes = make_pdf_bytes(st.session_state.quiz_gen_final)
             if pdf_bytes:
                 st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",
