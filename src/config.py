@@ -7,7 +7,7 @@ class P:
     OPENAI   = "🤖 OpenAI ChatGPT"
     GEMINI   = "✨ Google Gemini"
     CLAUDE   = "🎭 Anthropic Claude"
-    ALL      = [LMSTUDIO, OLLAMA, WEBLLM, OPENAI, GEMINI, CLAUDE]
+    ALL      = [OPENAI, GEMINI, CLAUDE, LMSTUDIO, OLLAMA, WEBLLM]
 
 # --- PDF 분석 관련 설정 ---
 LOCAL_PDF_MAX_PAGES = 50

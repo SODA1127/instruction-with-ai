@@ -267,17 +267,20 @@ def main() -> None:
     feature = render_sidebar()
 
     # 클라우드 프로바이더인데 API 키가 없을 경우 경고
-    provider = st.session_state.get("provider", P.LMSTUDIO)
+    provider = st.session_state.get("provider", P.ALL[0])
     api_key  = st.session_state.get("api_key", "")
+    
+    # 클라우드 프로바이더(OPENAI, GEMINI, CLAUDE)만 API 키 체크
+    cloud_providers = [P.OPENAI, P.GEMINI, P.CLAUDE]
 
-    if provider != P.LMSTUDIO and not api_key:
+    if provider in cloud_providers and not api_key:
         st.warning(
             f"⚠️ {provider} 사용을 위해 사이드바에서 API 키를 입력해주세요.\n\n"
-            "API 키는 세션 동안만 메모리에 저장되며 어디에도 기록되지 않습니다.",
+            "API 키는 브라우저 쿠키에 안전하게 저장(선택 시)되거나 세션 동안만 유지됩니다.",
             icon="🔑"
         )
 
-    # LM Studio인데 연결 안 됨
+    # LM Studio 전용 연결 체크 (다른 로컬 모델도 향후 추가 가능)
     if provider == P.LMSTUDIO and not st.session_state.get("lm_connected", True):
         st.error("⚠️ LM Studio에 연결할 수 없습니다. LM Studio를 실행하고 모델을 로드해주세요.")
 
