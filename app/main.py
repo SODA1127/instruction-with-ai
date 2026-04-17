@@ -20,6 +20,17 @@ from app.pages import (
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
 
+import extra_streamlit_components as stx
+
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+def _get_api_key_cookie_name(provider: str) -> str:
+    # 프로바이더 이름에서 공백과 특수문자를 제거하여 쿠키 키 생성
+    clean_name = "".join(filter(str.isalnum, provider)).lower()
+    return f"st_ai_platform_{clean_name}_key"
+
 def render_sidebar() -> str:
     """사이드바 렌더링 및 프로바이더 설정."""
     with st.sidebar:
@@ -140,19 +151,41 @@ def _render_cloud_config(provider: str) -> None:
     """OpenAI / Gemini / Claude 공통 설정 패널."""
     hint_url, hint_prefix = PROVIDER_KEY_HINTS[provider]
     provider_full_name = provider.split(" ", 1)[1]
+    cookie_name = _get_api_key_cookie_name(provider)
+    cookie_manager = get_cookie_manager()
 
     st.markdown(f"**🔑 {provider_full_name} API 키**")
     session_key = f"api_key_{provider}"
+    
+    # 세션 상태에 없으면 쿠키에서 시도
+    if session_key not in st.session_state:
+        cookie_val = cookie_manager.get(cookie_name)
+        if cookie_val:
+            st.session_state[session_key] = cookie_val
+
     saved_key = st.session_state.get(session_key, "")
 
-    api_key = st.text_input("API 키 입력", value=saved_key, type="password", key=f"api_key_input_{provider}", label_visibility="collapsed")
+    # API 키 입력 필드 (on_change를 사용해 쿠키 업데이트)
+    api_key = st.text_input(
+        "API 키 입력", 
+        value=saved_key, 
+        type="password", 
+        key=f"api_key_input_{provider}", 
+        label_visibility="collapsed"
+    )
     st.markdown(f"<small>🔗 <a href='{hint_url}' target='_blank'>발급받기</a></small>", unsafe_allow_html=True)
 
     if api_key:
         st.session_state[session_key] = api_key
         st.session_state.api_key = api_key
+        # 쿠키에 저장 (만료일 약 30일 설정)
+        if api_key != saved_key:
+            cookie_manager.set(cookie_name, api_key, expires_at=None) 
     else:
         st.session_state.api_key = ""
+        # 키가 비어있으면 쿠키 삭제
+        if saved_key:
+            cookie_manager.delete(cookie_name)
 
     st.markdown("**🤖 모델 선택**")
     models = PROVIDER_MODELS[provider] + [CUSTOM_MODEL_OPTION]
@@ -181,6 +214,8 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
+    # 쿠키 매니저 초기화
+    cookie_manager = get_cookie_manager()
 
     st.markdown("""
     <style>
