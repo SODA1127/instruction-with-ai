@@ -17,8 +17,8 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     """줄 단위 상태 머신 방식으로 퀴즈 문항을 정교하게 추출합니다."""
     lines = text.split('\n')
     questions, current_q = [], None
-    q_start_re = re.compile(r'(?:[\*#\-\s]*)(?:문항\s*)?(\d+)[\.번\)]\s*(.*)', re.IGNORECASE)
-    opt_start_re = re.compile(r'^\s*(?:[①-⑩\(\)\-\*]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
+    q_start_re = re.compile(r'^\s*(?:[\*#\-\s]*)(?:(?:문항|질문|문제|Q)\s*(\d+)[\.번\)]?\s*(.*)|(\d+)(?:번\s*\.?|\.)\s+(.*))', re.IGNORECASE)
+    opt_start_re = re.compile(r'^\s*(?:[\-\*]\s+)?([①-⑩]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
     ans_re, exp_re = re.compile(r'(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE), re.compile(r'(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
     quiz_started = False
     
@@ -32,16 +32,20 @@ def parse_quiz_markdown(text: str) -> list[dict]:
             continue
 
         q_match = q_start_re.search(line)
-        if q_match and q_match.start() < 10:
+        if q_match:
+            num = q_match.group(1) or q_match.group(3)
+            cont = q_match.group(2) or q_match.group(4) or ""
+            cont = cont.strip("*#- ")
+            
             quiz_started = True 
             if current_q: questions.append(current_q)
-            current_q = {"number": q_match.group(1), "content": q_match.group(2).strip(), "options": [], "answer": "", "explanation": "", "raw": raw_line}
+            current_q = {"number": num, "content": cont, "options": [], "answer": "", "explanation": "", "raw": raw_line}
             continue
         if not quiz_started or not current_q: continue
         opt_match = opt_start_re.match(line)
         if opt_match:
-            if opt_match.group(1).strip():
-                current_q["options"].append(opt_match.group(1).strip())
+            if opt_match.group(2).strip():
+                current_q["options"].append(f"{opt_match.group(1)} {opt_match.group(2).strip()}")
                 current_q["raw"] += "\n" + raw_line
                 continue
         a_match = ans_re.search(line)
@@ -55,9 +59,9 @@ def parse_quiz_markdown(text: str) -> list[dict]:
             current_q["raw"] += "\n" + raw_line
             continue
         if not current_q["options"] and not current_q["answer"] and not current_q["explanation"]:
-            current_q["content"] += " " + line
+            current_q["content"] += "\n" + line
         elif current_q["explanation"]:
-            current_q["explanation"] += " " + line
+            current_q["explanation"] += "\n" + line
         current_q["raw"] += "\n" + raw_line
     if current_q: questions.append(current_q)
     return questions
@@ -75,8 +79,21 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         content = content.replace("\\*\\*", "**").replace("\\*", "*")
         
         # 2. n지선다 줄바꿈 처리 - 문장 중간의 기호들 앞에 줄바꿈 삽입
-        # ①~⑩, (1)~(5), 1)~5) 형태 지원
-        content = re.sub(r'([①-⑩]|\([1-5]\)|(?<=\s)[1-5][\)\.])', r'\n\1', content)
+        # 단, 수식 내부의 1), (1) 등으로 인해 수식이 깨지는 것을 방지하기 위해 임시 치환
+        placeholders = {}
+        def repl_math(match):
+            key = f"__MATH_{len(placeholders)}__"
+            placeholders[key] = match.group(0)
+            return key
+            
+        content = re.sub(r'\$\$.*?\$\$', repl_math, content, flags=re.DOTALL)
+        content = re.sub(r'\$[^\$\n]*?\$', repl_math, content)
+        
+        # 문장 중간에 옵션이 연달아 나오는 경우 분리 (단, 줄 시작 마커 -, *, : 등 뒤에서는 분리하지 않음)
+        content = re.sub(r'([^\n\-\*:#])\s+([①-⑩]|\([1-5]\)|[1-5][\)\.])', r'\1\n\2', content)
+        
+        for k, v in placeholders.items():
+            content = content.replace(k, v)
         
         # 3. 정답 및 해설 섹션을 <details> 태그로 감싸기
         def repl_details(match):
