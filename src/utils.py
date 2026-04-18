@@ -4,6 +4,11 @@ import io
 import base64
 import os
 try:
+    import markdown
+except ImportError:
+    markdown = None
+
+try:
     from weasyprint import HTML
     try:
         from weasyprint.fonts import FontConfiguration
@@ -12,7 +17,7 @@ try:
             from weasyprint.text.fonts import FontConfiguration
         except ImportError:
             FontConfiguration = None
-except ImportError:
+except Exception: # weasyprint는 시스템 라이브러리 부재로 에러가 날 수 있음
     HTML = None
     FontConfiguration = None
 
