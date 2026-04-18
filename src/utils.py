@@ -401,18 +401,37 @@ def make_pdf_bytes(md_text: str) -> bytes:
         return b""
 
 
-def parse_thinking_response(text: str) -> tuple[str, str]:
+    def clean_output(content: str) -> str:
+        # 1. ```...``` 형태의 코드 블록 내부 $ 제거
+        def repl_block(match):
+            return match.group(0).replace("$", "")
+        content = re.sub(r"```[\s\S]*?```", repl_block, content)
+        
+        # 2. 인라인 $...$ 중 코드 성격이 강한 것들 보정
+        # 알파벳/숫자로 시작하고 언더바(_)나 대괄호([,])가 포함된 경우 $ 제거
+        def repl_inline(match):
+            inner = match.group(1)
+            # 변수명, 인덱스 접근, 함수 호출 등 코드 성격 판단
+            if re.search(r'[_\[\]\(\)\.]', inner) and not re.search(r'[\+\-\*/\^\\=]', inner):
+                return f"`{inner}`"
+            return match.group(0)
+            
+        content = re.sub(r"\$([^\$\n]+)\$", repl_inline, content)
+        return content
+
     m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
     if m:
-        return m.group(1).strip(), text[m.end():].strip()
+        thinking = m.group(1).strip()
+        final = text[m.end():].strip()
+        return thinking, clean_output(final)
 
     m = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
     if m:
         thinking = m.group(1).strip()
         final = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-        return thinking, final
+        return thinking, clean_output(final)
 
-    return "", text
+    return "", clean_output(text)
 
 
 def extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
