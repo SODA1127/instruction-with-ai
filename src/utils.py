@@ -431,6 +431,9 @@ def make_pdf_bytes(md_text: str) -> bytes:
         # 3. <br> 태그 보정
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
         
+        # 4. 이스케이프된 마크다운 별표(\*\*) 복원
+        content = content.replace("\\*\\*", "**").replace("\\*", "*")
+        
         return content
 
     m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
