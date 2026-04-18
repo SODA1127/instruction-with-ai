@@ -140,13 +140,14 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     questions = []
     current_q = None
     
-    # 문항 시작 기호 패턴 (문항 1., 1., 1번. 및 마크다운 **1.**, ### 1. 등 대응)
-    q_start_re = re.compile(r'^\s*(?:[\*#\s]*)(?:문항\s*)?(\d+)[번\.]\s*(.*)', re.IGNORECASE)
-    # 보기 시작 기호 패턴 (①-⑩, (1)-(5), 1)-5), 1., - 보기, * 보기 등)
+    # 문항 시작 기호 패턴 (문항 1., **1.**, 1번. 등 매우 유연하게)
+    q_start_re = re.compile(r'(?:[\*#\-\s]*)(?:문항\s*)?(\d+)[번\.]\s*(.*)', re.IGNORECASE)
+    # 보기 시작 기호 패턴 (①-⑩, (1)-(5), 1)-5), 1. 등)
+    # 줄의 시작 부분에서 나타나는 보기 패턴만 인식
     opt_start_re = re.compile(r'^\s*(?:[①-⑩\(\)\-\*]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
     # 정답/해설 패턴
-    ans_re = re.compile(r'^\s*(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE)
-    exp_re = re.compile(r'^\s*(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
+    ans_re = re.compile(r'(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE)
+    exp_re = re.compile(r'(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
 
     quiz_started = False
     
@@ -155,10 +156,11 @@ def parse_quiz_markdown(text: str) -> list[dict]:
         line = line.strip()
         if not line: continue
         
-        # 1. 새로운 문항 시작 확인
-        q_match = q_start_re.match(line)
-        if q_match:
-            quiz_started = True # 첫 문항을 만난 시점부터 파싱 시작
+        # 1. 새로운 문항 시작 확인 (search로 더 유연하게 탐지)
+        q_match = q_start_re.search(line)
+        # 단, search 결과가 줄의 앞부분 5글자 내외에서 시작할 때만 인정 (본문 내 숫자 오인 방지)
+        if q_match and q_match.start() < 10:
+            quiz_started = True 
             if current_q:
                 questions.append(current_q)
             current_q = {
@@ -178,32 +180,31 @@ def parse_quiz_markdown(text: str) -> list[dict]:
         opt_match = opt_start_re.match(line)
         if opt_match:
             opt_text = opt_match.group(1).strip()
-            # "10 진법" 같은 단어와 "1. 보기"를 구분하기 위해 길이가 너무 짧은 패턴 제외
             if opt_text:
                 current_q["options"].append(opt_text)
                 current_q["raw"] += "\n" + raw_line
                 continue
                 
         # 3. 정답 확인
-        a_match = ans_re.match(line)
-        if a_match:
+        a_match = ans_re.search(line)
+        if a_match and a_match.start() < 10:
             current_q["answer"] = a_match.group(1).strip()
             current_q["raw"] += "\n" + raw_line
             continue
             
         # 4. 해설 확인
-        e_match = exp_re.match(line)
-        if e_match:
+        e_match = exp_re.search(line)
+        if e_match and e_match.start() < 10:
             current_q["explanation"] = e_match.group(1).strip()
             current_q["raw"] += "\n" + raw_line
             continue
             
-        # 5. 기타: 문제 본문의 연장이거나 해설의 연장
-        if current_q["explanation"]:
-            current_q["explanation"] += " " + line
-        elif not current_q["options"] and not current_q["answer"]:
-            # 보기가 나오기 전이면 문제 본문의 연장으로 간주
+        # 5. 기타: 문제 본문의 연장
+        # 보기가 나오기 전이고 정답이 나오기 전이면 본문에 추가
+        if not current_q["options"] and not current_q["answer"] and not current_q["explanation"]:
             current_q["content"] += " " + line
+        elif current_q["explanation"]:
+            current_q["explanation"] += " " + line
         
         current_q["raw"] += "\n" + raw_line
 
