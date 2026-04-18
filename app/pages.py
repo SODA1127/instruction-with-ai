@@ -1153,7 +1153,10 @@ def _render_pdf_general_result() -> None:
     )
     mode = st.session_state.get("user_mode", "교육자용")
     st.subheader(f"📋 {type_label} 결과 ({mode})")
-    st.markdown(result)
+    
+    # 생각 과정 제거 후 본문만 렌더링
+    _, final_content = parse_thinking_response(result)
+    st.markdown(final_content)
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
