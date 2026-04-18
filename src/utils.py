@@ -422,6 +422,10 @@ def make_pdf_bytes(md_text: str) -> bytes:
             return match.group(0)
             
         content = re.sub(r"\$([^\$\n]+)\$", repl_inline, content)
+        
+        # 3. <br> 태그를 실제 줄바꿈(\n)으로 치환
+        content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
+        
         return content
 
     m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
