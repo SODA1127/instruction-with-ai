@@ -134,44 +134,67 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
     return "", clean_output(text)
 
 def parse_quiz_markdown(text: str) -> list[dict]:
-    """마크다운 텍스트에서 퀴즈 문항을 추출합니다."""
+    """마크다운 텍스트에서 퀴즈 문항을 엄격하게 추출합니다."""
+    # 1. 도입부 제거 (첫 번째 문항 번호가 나올 때까지)
+    # 문항 1., 1번., 1. 등으로 시작하는 지점 찾기
+    start_match = re.search(r'(?:\n|^)(?:(?:문항\s*)?1[\.번])', text)
+    if start_match:
+        text = text[start_match.start():]
+    
     questions = []
-    # 문항별 블록 분리 (보통 '문항 1.' 또는 '1번.' 등으로 시작)
-    blocks = re.split(r'\n(?=(?:문항\s*)?\d+[\.번])', text)
+    # 2. 문항별 블록 분리 (줄 시작 부분의 '문항 N.' 또는 'N.' 패턴 사용)
+    blocks = re.split(r'\n(?=(?:문항\s*)?\d+[번\.])', '\n' + text.strip())
     
     for block in blocks:
-        if not block.strip(): continue
+        block = block.strip()
+        if not block: continue
         
-        # 문제 번호 및 내용
-        num_m = re.search(r'(?:문항\s*)?(\d+)[\.번]\s*(.*)', block)
-        if not num_m: continue
+        # 문제 번호와 전체 설명 추출
+        head_m = re.match(r'(?:문항\s*)?(\d+)[번\.]\s*(.*)', block, re.DOTALL)
+        if not head_m: continue
         
-        num = num_m.group(1)
-        # 본문에서 옵션/정답 제외
-        content_full = num_m.group(2)
-        content_parts = re.split(r'\n[\s\-\*]*[\(①\d]', content_full)
-        content_main = content_parts[0].strip()
+        q_num = head_m.group(1)
+        full_body = head_m.group(2)
         
-        # 옵션 추출 (①, ②, ③, ④ 또는 (1), (2) 등)
-        options = re.findall(r'[\(①\d][\s\)]*([^①-⑩\n\(\)]+)', block)
-        options = [o.strip() for o in options if len(o.strip()) > 1]
+        # 3. 정답 및 해설 분리
+        # 정답: 혹은 답: 이후를 정답/해설 영역으로 분리
+        ans_split = re.split(r'\n\s*(?:정답|답|해설)\s*[:：]?', full_body, flags=re.IGNORECASE)
+        question_area = ans_split[0].strip()
+        ans_area = "\n".join(ans_split[1:]).strip() if len(ans_split) > 1 else ""
         
-        # 정답 추출
-        ans_m = re.search(r'(?:정답|답)\s*[:：]?\s*([^\n]+)', block)
-        answer = ans_m.group(1).strip() if ans_m else ""
+        # 4. 보기(Options) 추출
+        # 줄 시작이 ①-⑩, (1)-(5), 1)-5) 인 경우만 보기로 인정
+        option_lines = re.findall(r'^\s*([①-⑩\(\d][\d\)\. ]+.*)', question_area, re.MULTILINE)
         
-        # 해설 추출
-        explain_m = re.search(r'(?:해설)\s*[:：]?\s*(.*)', block, re.DOTALL)
-        explanation = explain_m.group(1).strip() if explain_m else ""
+        # 실제 보기 텍스트만 추출 (기호 제거)
+        options = []
+        for opt in option_lines:
+            # 보기 기호(예: ①, (1), 1.) 제거
+            clean_opt = re.sub(r'^[\s\(①-⑩\d]+[\)\. ]+\s*', '', opt).strip()
+            if clean_opt and len(clean_opt) > 1:
+                options.append(clean_opt)
+        
+        # 문제 본문 (보기 기호가 시작되기 전까지의 텍스트)
+        content_main = re.split(r'\n\s*[①\(\d]', question_area)[0].strip()
+        
+        # 정답 추출 (간단하게 첫 줄 혹은 특정 패턴)
+        answer = ans_area.split('\n')[0].strip() if ans_area else ""
+        explanation = "\n".join(ans_area.split('\n')[1:]).strip() if ans_area else ""
+        
+        # 만약 정갑/해설 키워드가 없었다면 영역 내에서 찾아보기
+        if not answer:
+            ans_internal = re.search(r'(?:정답|답)\s*[:：]?\s*([^\n]+)', block)
+            if ans_internal: answer = ans_internal.group(1).strip()
         
         questions.append({
-            "number": num,
+            "number": q_num,
             "content": content_main,
             "options": options,
             "answer": answer,
             "explanation": explanation,
             "raw": block
         })
+    
     return questions
 
 def extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
