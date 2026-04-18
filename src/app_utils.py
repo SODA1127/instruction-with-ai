@@ -115,8 +115,10 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
             return f'\n\n<details>\n<summary>💡 정답 및 해설 확인하기</summary>\n<div markdown="1">\n\n{inner}\n\n</div>\n</details>\n\n'
         
         # "정답/답/해설"로 시작하는 블록을 찾음 (다음 문항 전이나 텍스트 끝까지)
-        pattern = r'\n\s*((?:정답|답|해설)\s*[:：]?\s*[\s\S]*?)(?=\n\s*(?:문항|###|#|\d+[\.번\)])|$)'
-        content = re.sub(pattern, repl_details, content)
+        # 앞부분에 이모지가 있을 수 있음을 허용하고, 다음 문항이 나올 때까지를 매칭
+        lookahead = r'(?=\n\s*(?:[^\w\s]\s*)*(?:(?:문항|질문|문제|Q\.?|Quiz)\s*\d+[\.번\)]?|###|#|\d+(?:번\s*\.?|\.|\)))\s*|$)'
+        pattern = r'\n\s*(?:[^\w\s]\s*)*((?:정답|답|해설)\s*[:：]?\s*[\s\S]*?)' + lookahead
+        content = re.sub(pattern, repl_details, content, flags=re.IGNORECASE)
         
         # 불필요한 공백/줄바꿈 정리
         return re.sub(r'\n{3,}', '\n\n', content).strip()
