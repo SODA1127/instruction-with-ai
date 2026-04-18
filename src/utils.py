@@ -117,10 +117,18 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
         # 4. 이스케이프된 마크다운 별표(\*\*) 복원
         content = content.replace("\\*\\*", "**").replace("\\*", "*")
-
         # 5. n지선다 보기 기호 (①~⑩, (1)~(5)) 앞에 줄바꿈 강제 (가독성 제고)
-        # 보기 기호가 줄 중간에 있으면 앞에 \n 추가
         content = re.sub(r'([①-⑩]|\([1-5]\))', r'\n\1', content)
+        
+        # 6. 정답 및 해설 영역을 <details> 토글로 감싸기
+        def repl_details(match):
+            inner = match.group(0).strip()
+            return f'\n\n<details>\n<summary>💡 정답 및 해설 확인하기</summary>\n<div markdown="1">\n\n{inner}\n\n</div>\n</details>\n\n'
+
+        # 정답: 혹은 해설: 로 시작하여 다음 문항 시작 전까지를 하나의 블록으로 묶음
+        pattern = r'\n\s*((?:정답|답|해설)\s*[:：]?\s*[\s\S]*?)(?=\n\s*(?:문항|###|#|\d+[\.번])|$)'
+        content = re.sub(pattern, repl_details, content)
+
         # 중복된 줄바꿈 제거
         content = re.sub(r'\n{3,}', '\n\n', content)
         
