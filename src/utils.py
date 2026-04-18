@@ -117,7 +117,14 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
         # 4. 이스케이프된 마크다운 별표(\*\*) 복원
         content = content.replace("\\*\\*", "**").replace("\\*", "*")
-        return content
+
+        # 5. n지선다 보기 기호 (①~⑩, (1)~(5)) 앞에 줄바꿈 강제 (가독성 제고)
+        # 보기 기호가 줄 중간에 있으면 앞에 \n 추가
+        content = re.sub(r'([①-⑩]|\([1-5]\))', r'\n\1', content)
+        # 중복된 줄바꿈 제거
+        content = re.sub(r'\n{3,}', '\n\n', content)
+        
+        return content.strip()
 
     m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
     if m:
