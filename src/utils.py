@@ -134,67 +134,83 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
     return "", clean_output(text)
 
 def parse_quiz_markdown(text: str) -> list[dict]:
-    """마크다운 텍스트에서 퀴즈 문항을 엄격하게 추출합니다."""
-    # 1. 도입부 제거 (첫 번째 문항 번호가 나올 때까지)
-    # 문항 1., 1번., 1. 등으로 시작하는 지점 찾기
-    start_match = re.search(r'(?:\n|^)(?:(?:문항\s*)?1[\.번])', text)
-    if start_match:
-        text = text[start_match.start():]
-    
+    """줄 단위 상태 머신 방식으로 퀴즈 문항을 정교하게 추출합니다."""
+    # 사고 과정 제거 후의 순수 텍스트만 처리
+    lines = text.split('\n')
     questions = []
-    # 2. 문항별 블록 분리 (줄 시작 부분의 '문항 N.' 또는 'N.' 패턴 사용)
-    blocks = re.split(r'\n(?=(?:문항\s*)?\d+[번\.])', '\n' + text.strip())
+    current_q = None
     
-    for block in blocks:
-        block = block.strip()
-        if not block: continue
-        
-        # 문제 번호와 전체 설명 추출
-        head_m = re.match(r'(?:문항\s*)?(\d+)[번\.]\s*(.*)', block, re.DOTALL)
-        if not head_m: continue
-        
-        q_num = head_m.group(1)
-        full_body = head_m.group(2)
-        
-        # 3. 정답 및 해설 분리
-        # 정답: 혹은 답: 이후를 정답/해설 영역으로 분리
-        ans_split = re.split(r'\n\s*(?:정답|답|해설)\s*[:：]?', full_body, flags=re.IGNORECASE)
-        question_area = ans_split[0].strip()
-        ans_area = "\n".join(ans_split[1:]).strip() if len(ans_split) > 1 else ""
-        
-        # 4. 보기(Options) 추출
-        # 줄 시작이 ①-⑩, (1)-(5), 1)-5) 인 경우만 보기로 인정
-        option_lines = re.findall(r'^\s*([①-⑩\(\d][\d\)\. ]+.*)', question_area, re.MULTILINE)
-        
-        # 실제 보기 텍스트만 추출 (기호 제거)
-        options = []
-        for opt in option_lines:
-            # 보기 기호(예: ①, (1), 1.) 제거
-            clean_opt = re.sub(r'^[\s\(①-⑩\d]+[\)\. ]+\s*', '', opt).strip()
-            if clean_opt and len(clean_opt) > 1:
-                options.append(clean_opt)
-        
-        # 문제 본문 (보기 기호가 시작되기 전까지의 텍스트)
-        content_main = re.split(r'\n\s*[①\(\d]', question_area)[0].strip()
-        
-        # 정답 추출 (간단하게 첫 줄 혹은 특정 패턴)
-        answer = ans_area.split('\n')[0].strip() if ans_area else ""
-        explanation = "\n".join(ans_area.split('\n')[1:]).strip() if ans_area else ""
-        
-        # 만약 정갑/해설 키워드가 없었다면 영역 내에서 찾아보기
-        if not answer:
-            ans_internal = re.search(r'(?:정답|답)\s*[:：]?\s*([^\n]+)', block)
-            if ans_internal: answer = ans_internal.group(1).strip()
-        
-        questions.append({
-            "number": q_num,
-            "content": content_main,
-            "options": options,
-            "answer": answer,
-            "explanation": explanation,
-            "raw": block
-        })
+    # 문항 시작 기호 패턴 (문항 1., 1., 1번. 등)
+    q_start_re = re.compile(r'^\s*(?:문항\s*)?(\d+)[번\.]\s*(.*)', re.IGNORECASE)
+    # 보기 시작 기호 패턴 (①-⑩, (1)-(5), 1)-5), 1. 등)
+    # 텍스트 중간의 숫자를 보기로 오인하지 않도록 줄 시작(^)에서만 매칭
+    opt_start_re = re.compile(r'^\s*(?:[①-⑩\(\)]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
+    # 정답/해설 패턴
+    ans_re = re.compile(r'^\s*(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE)
+    exp_re = re.compile(r'^\s*(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
+
+    quiz_started = False
     
+    for line in lines:
+        raw_line = line
+        line = line.strip()
+        if not line: continue
+        
+        # 1. 새로운 문항 시작 확인
+        q_match = q_start_re.match(line)
+        if q_match:
+            quiz_started = True # 첫 문항을 만난 시점부터 파싱 시작
+            if current_q:
+                questions.append(current_q)
+            current_q = {
+                "number": q_match.group(1),
+                "content": q_match.group(2).strip(),
+                "options": [],
+                "answer": "",
+                "explanation": "",
+                "raw": raw_line
+            }
+            continue
+            
+        if not quiz_started or not current_q:
+            continue
+            
+        # 2. 보기 확인
+        opt_match = opt_start_re.match(line)
+        if opt_match:
+            opt_text = opt_match.group(1).strip()
+            # "10 진법" 같은 단어와 "1. 보기"를 구분하기 위해 길이가 너무 짧은 패턴 제외
+            if opt_text:
+                current_q["options"].append(opt_text)
+                current_q["raw"] += "\n" + raw_line
+                continue
+                
+        # 3. 정답 확인
+        a_match = ans_re.match(line)
+        if a_match:
+            current_q["answer"] = a_match.group(1).strip()
+            current_q["raw"] += "\n" + raw_line
+            continue
+            
+        # 4. 해설 확인
+        e_match = exp_re.match(line)
+        if e_match:
+            current_q["explanation"] = e_match.group(1).strip()
+            current_q["raw"] += "\n" + raw_line
+            continue
+            
+        # 5. 기타: 문제 본문의 연장이거나 해설의 연장
+        if current_q["explanation"]:
+            current_q["explanation"] += " " + line
+        elif not current_q["options"] and not current_q["answer"]:
+            # 보기가 나오기 전이면 문제 본문의 연장으로 간주
+            current_q["content"] += " " + line
+        
+        current_q["raw"] += "\n" + raw_line
+
+    if current_q:
+        questions.append(current_q)
+        
     return questions
 
 def extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
