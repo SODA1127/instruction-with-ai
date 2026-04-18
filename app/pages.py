@@ -70,9 +70,10 @@ def render_image_analyzer() -> None:
             except Exception as e:
                 st.error(f"❌ {e}")
 
-        if st.session_state.get("img_analyzer_result"):
             st.subheader("📋 분석 결과")
-            st.markdown(st.session_state.img_analyzer_result)
+            # 생각 과정 제거 및 후처리 적용
+            _, final_content = parse_thinking_response(st.session_state.img_analyzer_result)
+            st.markdown(final_content)
             dl_col1, dl_col2 = st.columns([1, 1])
             # 파일명 접두어 준비
             base_name = "image_analysis"
@@ -286,7 +287,9 @@ def render_lesson_plan() -> None:
 
     if st.session_state.get("lesson_plan_result"):
         st.subheader("📋 생성된 교안")
-        st.markdown(st.session_state.lesson_plan_result)
+        # 생각 과정 제거 및 후처리 적용
+        _, final_content = parse_thinking_response(st.session_state.lesson_plan_result)
+        st.markdown(final_content)
         
         # 파일명 접두어 준비
         base_name = "lesson_plan"
@@ -430,6 +433,7 @@ def render_quiz_generator() -> None:
                     f'color:#6ee7b7;white-space:pre-wrap;">{thinking}</div>',
                     unsafe_allow_html=True)
         st.subheader("📝 생성된 평가 문항")
+        # 이미 parse_thinking_response를 거친 final 변수 사용
         st.markdown(final)
         
         # 파일명 접두어 준비
@@ -754,7 +758,9 @@ def _render_question_solver_ui(
 
         if solved:
             with st.expander(f"📐 문제 {q['번호']} 풀이 보기", expanded=True):
-                st.markdown(solutions[i])
+                # 생각 과정 제거 및 후처리($, ** 보정) 적용
+                _, final_sol = parse_thinking_response(solutions[i])
+                st.markdown(final_sol)
                 # 파일명 접두어 준비
                 orig_name = st.session_state.get("pdf_filename", "pdf")
                 base_name = os.path.splitext(orig_name)[0]
