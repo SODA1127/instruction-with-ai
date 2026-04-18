@@ -17,7 +17,7 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     """줄 단위 상태 머신 방식으로 퀴즈 문항을 정교하게 추출합니다."""
     lines = text.split('\n')
     questions, current_q = [], None
-    q_start_re = re.compile(r'^\s*(?:[\*#\-\s]*)(?:(?:문항|질문|문제|Q)\s*(\d+)[\.번\)]?\s*(.*)|(\d+)(?:번\s*\.?|\.)\s+(.*))', re.IGNORECASE)
+    q_start_re = re.compile(r'^\s*(?:[^\w\s]\s*)*(?:(?:문항|질문|문제|Q)\s*(\d+)[\.번\)]?\s*(.*)|(\d+)(?:번\s*\.?|\.)\s+(.*))', re.IGNORECASE)
     opt_start_re = re.compile(r'^\s*(?:[\-\*]\s+)?([①-⑩]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
     ans_re, exp_re = re.compile(r'(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE), re.compile(r'(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
     quiz_started = False
@@ -31,7 +31,7 @@ def parse_quiz_markdown(text: str) -> list[dict]:
         if line.startswith('<') and line.endswith('>'):
             continue
 
-        q_match = q_start_re.search(line)
+        q_match = q_start_re.match(line)
         if q_match:
             num = q_match.group(1) or q_match.group(3)
             cont = q_match.group(2) or q_match.group(4) or ""
