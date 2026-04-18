@@ -407,23 +407,28 @@ def make_pdf_bytes(md_text: str) -> bytes:
             return match.group(0).replace("$", "")
         content = re.sub(r"```[\s\S]*?```", repl_block, content)
         
-        # 2. 인라인 $...$ 보정 로직 강화
+        # 2. 인라인 $...$ 보정 로직 정밀화
         def repl_inline(match):
             inner = match.group(1).strip()
-            # 복잡한 LaTeX 명령어(\), 위첨자(^), 중괄호({}), 등호(=), 연산자(+, -, *, /)가 포함되어 있으면 진짜 수식으로 판단
-            is_complex_math = re.search(r'[\^\\\{\}\=\+\-\*/\<\>\sum\frac]', inner)
             
-            # 복잡한 수식이 아니고, 단순 알파벳, 숫자, 콤마, 마침표, 대괄호 등으로만 구성된 경우 코드/일반텍스트로 전환
-            if not is_complex_math:
-                # 단일 콤마나 대괄호 쌍 같은 특수 케이스 포함
-                if re.search(r'^[a-zA-Z0-9\s,\[\]\(\)\.\_]+$', inner) or inner in [",", "[ ]", "[]"]:
-                    return f"`{inner}`"
+            # (A) 명백한 LaTeX 명령어(\로 시작)나 위첨자(^), 중괄호({})가 있으면 진짜 수식
+            is_real_latex = re.search(r'[\^\\\{\}]', inner)
+            if is_real_latex:
+                return match.group(0)
+            
+            # (B) 대괄호([]), 따옴표(', "), 언더바(_), 마침표(.) 등이 있으면 코드(변수/리스트 등)로 판단
+            is_code_marker = re.search(r'[\[\]\'\"_\.]', inner)
+            
+            # (C) 단순 알파벳, 숫자, 콤마, 등호(=), 연산자(+, -, *) 등으로만 구성된 경우
+            # 수식 명령어(\)가 없는 상태에서 코드 마커가 있거나 매우 짧고 단순하면 백틱(`)으로 전환
+            if is_code_marker or re.search(r'^[a-zA-Z0-9\s,=\+\-\*]+$', inner) or inner in [",", "[ ]", "[]"]:
+                return f"`{inner}`"
             
             return match.group(0)
             
         content = re.sub(r"\$([^\$\n]+)\$", repl_inline, content)
         
-        # 3. <br> 태그를 실제 줄바꿈(\n)으로 치환
+        # 3. <br> 태그 보정
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
         
         return content
