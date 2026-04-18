@@ -4,7 +4,7 @@ from .common import get_session_config
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.utils import make_pdf_bytes, parse_thinking_response, safe_filename
+from src.app_utils import make_pdf_bytes, parse_thinking_response, safe_filename
 
 def render_code_analyzer() -> None:
     """💻 기능 6: 프로그래밍 코드 분석기"""

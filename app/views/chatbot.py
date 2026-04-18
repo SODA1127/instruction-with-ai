@@ -3,7 +3,7 @@ from .common import get_session_config
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai, stream_ai
-from src.utils import parse_thinking_response
+from src.app_utils import parse_thinking_response
 
 def render_chatbot() -> None:
     """💬 기능 5: 교육 상담 챗봇"""

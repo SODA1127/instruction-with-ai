@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
-    from src.utils import make_pdf_bytes
+    from src.app_utils import make_pdf_bytes
 except ImportError as e:
     print(f"Import Error: {e}")
     sys.exit(1)

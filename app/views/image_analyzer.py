@@ -4,7 +4,7 @@ from .common import get_session_config
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.utils import encode_image_to_base64, make_pdf_bytes, safe_filename
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, safe_filename
 
 def render_image_analyzer() -> None:
     """📸 기능 1: 이미지 기반 문제 분석기"""

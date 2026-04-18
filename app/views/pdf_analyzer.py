@@ -5,7 +5,7 @@ from .common import get_session_config, get_max_pdf_pages, _PYPDF_OK, _FITZ_OK
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename
 
 if _PYPDF_OK:
     import pypdf
