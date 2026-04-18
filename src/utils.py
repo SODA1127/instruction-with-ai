@@ -407,13 +407,18 @@ def make_pdf_bytes(md_text: str) -> bytes:
             return match.group(0).replace("$", "")
         content = re.sub(r"```[\s\S]*?```", repl_block, content)
         
-        # 2. 인라인 $...$ 중 코드 성격이 강한 것들 보정
-        # 알파벳/숫자로 시작하고 언더바(_)나 대괄호([,])가 포함된 경우 $ 제거
+        # 2. 인라인 $...$ 보정 로직 강화
         def repl_inline(match):
-            inner = match.group(1)
-            # 변수명, 인덱스 접근, 함수 호출 등 코드 성격 판단
-            if re.search(r'[_\[\]\(\)\.]', inner) and not re.search(r'[\+\-\*/\^\\=]', inner):
-                return f"`{inner}`"
+            inner = match.group(1).strip()
+            # 복잡한 LaTeX 명령어(\), 위첨자(^), 중괄호({}), 등호(=), 연산자(+, -, *, /)가 포함되어 있으면 진짜 수식으로 판단
+            is_complex_math = re.search(r'[\^\\\{\}\=\+\-\*/\<\>\sum\frac]', inner)
+            
+            # 복잡한 수식이 아니고, 단순 알파벳, 숫자, 콤마, 마침표, 대괄호 등으로만 구성된 경우 코드/일반텍스트로 전환
+            if not is_complex_math:
+                # 단일 콤마나 대괄호 쌍 같은 특수 케이스 포함
+                if re.search(r'^[a-zA-Z0-9\s,\[\]\(\)\.\_]+$', inner) or inner in [",", "[ ]", "[]"]:
+                    return f"`{inner}`"
+            
             return match.group(0)
             
         content = re.sub(r"\$([^\$\n]+)\$", repl_inline, content)
