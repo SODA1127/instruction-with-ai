@@ -63,7 +63,20 @@ def parse_quiz_markdown(text: str) -> list[dict]:
         elif current_q["explanation"]:
             current_q["explanation"] += "\n" + line
         current_q["raw"] += "\n" + raw_line
+        
     if current_q: questions.append(current_q)
+    
+    # 파싱에 전부 실패한 경우: 사용자가 퀴즈를 못 보는 문제를 막기 위해, 전체 텍스트를 하나의 질문으로 처리
+    if not questions and text.strip():
+        questions.append({
+            "number": "1",
+            "content": text.strip(),
+            "options": [],
+            "answer": "",
+            "explanation": "",
+            "raw": text
+        })
+        
     return questions
 
 def parse_thinking_response(text: str) -> tuple[str, str]:
