@@ -3,8 +3,18 @@ import re
 import io
 import base64
 import os
-from weasyprint import HTML
-from weasyprint.fonts import FontConfiguration
+try:
+    from weasyprint import HTML
+    try:
+        from weasyprint.fonts import FontConfiguration
+    except ImportError:
+        try:
+            from weasyprint.text.fonts import FontConfiguration
+        except ImportError:
+            FontConfiguration = None
+except ImportError:
+    HTML = None
+    FontConfiguration = None
 
 try:
     import pypdf
@@ -66,7 +76,10 @@ def make_pdf_bytes(markdown_text: str) -> bytes:
         """
         
         # ── 5. PDF 생성 ───────────────────────────────────────────
-        font_config = FontConfiguration()
+        if HTML is None:
+            return b""
+            
+        font_config = FontConfiguration() if FontConfiguration else None
         pdf_bytes = HTML(string=full_html).write_pdf(font_config=font_config)
         return pdf_bytes
         
