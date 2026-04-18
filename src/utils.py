@@ -140,11 +140,10 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     questions = []
     current_q = None
     
-    # 문항 시작 기호 패턴 (문항 1., 1., 1번. 등)
-    q_start_re = re.compile(r'^\s*(?:문항\s*)?(\d+)[번\.]\s*(.*)', re.IGNORECASE)
-    # 보기 시작 기호 패턴 (①-⑩, (1)-(5), 1)-5), 1. 등)
-    # 텍스트 중간의 숫자를 보기로 오인하지 않도록 줄 시작(^)에서만 매칭
-    opt_start_re = re.compile(r'^\s*(?:[①-⑩\(\)]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
+    # 문항 시작 기호 패턴 (문항 1., 1., 1번. 및 마크다운 **1.**, ### 1. 등 대응)
+    q_start_re = re.compile(r'^\s*(?:[\*#\s]*)(?:문항\s*)?(\d+)[번\.]\s*(.*)', re.IGNORECASE)
+    # 보기 시작 기호 패턴 (①-⑩, (1)-(5), 1)-5), 1., - 보기, * 보기 등)
+    opt_start_re = re.compile(r'^\s*(?:[①-⑩\(\)\-\*]|[1-5][\)\.]|(?:\([1-5]\)))\s*(.*)')
     # 정답/해설 패턴
     ans_re = re.compile(r'^\s*(?:정답|답)\s*[:：]?\s*(.*)', re.IGNORECASE)
     exp_re = re.compile(r'^\s*(?:해설)\s*[:：]?\s*(.*)', re.IGNORECASE)
