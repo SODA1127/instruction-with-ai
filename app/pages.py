@@ -446,7 +446,7 @@ def render_quiz_generator() -> None:
              base_name = os.path.splitext(first_up.name)[0]
         base_name = safe_filename(base_name)
             
-        dl_col1, dl_col2 = st.columns([1, 1])
+        dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 1])
         with dl_col1:
             st.download_button("💾 문항 저장 (.md)", data=final.encode('utf-8-sig'),
                                file_name=f"{base_name}.md", mime="text/markdown",
@@ -457,6 +457,86 @@ def render_quiz_generator() -> None:
                 st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",
                                    key="dl_quiz_pdf", use_container_width=True)
+        with dl_col3:
+            if st.button("📝 퀴즈 직접 풀어보기", key="btn_solve_interactive", use_container_width=True):
+                st.session_state.quiz_solving_mode = True
+                st.session_state.quiz_solved_data = parse_quiz_markdown(final)
+                st.session_state.quiz_user_answers = {}
+                st.session_state.quiz_results = {}
+                st.session_state.quiz_graded = False
+                st.rerun()
+
+    # ── 퀴즈 직접 풀어보기 UI ──────────────────────────────────────
+    if st.session_state.get("quiz_solving_mode") and st.session_state.get("quiz_solved_data"):
+        st.divider()
+        st.subheader("✍️ 스마트 퀴즈 풀이")
+        questions = st.session_state.quiz_solved_data
+        
+        for idx, q in enumerate(questions):
+            st.markdown(f"**문항 {q['number']}. {q['content']}**")
+            
+            if q['options']:
+                # 객관식용 라디오 버튼
+                user_choice = st.radio(f"답안 선택 (Q{q['number']})", q['options'], 
+                                       key=f"solve_q_{idx}", index=None)
+                st.session_state.quiz_user_answers[idx] = user_choice
+            else:
+                # 주관식용 텍스트 입력
+                user_text = st.text_input(f"답안 입력 (Q{q['number']})", 
+                                          key=f"solve_q_{idx}")
+                st.session_state.quiz_user_answers[idx] = user_text
+
+        if st.button("🎯 채점하기", key="btn_quiz_grade", use_container_width=True):
+            for idx, q in enumerate(questions):
+                user_ans = str(st.session_state.quiz_user_answers.get(idx, "")).strip()
+                real_ans = str(q['answer']).strip()
+                # 채점 로직: 정답이 포함되어 있거나 일치하는지 확인
+                is_correct = real_ans in user_ans or user_ans in real_ans if user_ans else False
+                st.session_state.quiz_results[idx] = is_correct
+            st.session_state.quiz_graded = True
+            st.rerun()
+
+        if st.session_state.get("quiz_graded"):
+            correct_count = sum(1 for v in st.session_state.quiz_results.values() if v)
+            st.success(f"🎊 채점 완료! {len(questions)}문제 중 {correct_count}문제를 맞혔습니다.")
+            
+            for idx, q in enumerate(questions):
+                is_correct = st.session_state.quiz_results.get(idx)
+                color = "✅ 정답" if is_correct else "❌ 오답"
+                
+                with st.expander(f"{color} - 문항 {q['number']}", expanded=not is_correct):
+                    st.markdown(f"**나의 답:** {st.session_state.quiz_user_answers.get(idx)}")
+                    st.markdown(f"**실제 정답:** {q['answer']}")
+                    if q['explanation']:
+                        st.info(f"💡 해설: {q['explanation']}")
+                    
+                    if not is_correct:
+                        if st.button(f"📌 오답노트에 담기 ({q['number']}번)", key=f"btn_mark_wrong_{idx}"):
+                             w_notes = st.session_state.get("wrong_notes", [])
+                             if q['content'] not in [wn['content'] for wn in w_notes]:
+                                 w_notes.append(q)
+                                 st.session_state.wrong_notes = w_notes
+                                 st.toast(f"{q['number']}번 문제가 오답노트에 저장되었습니다!")
+
+        if st.button("🔙 목록으로 돌아가기", key="btn_back_to_list"):
+            st.session_state.quiz_solving_mode = False
+            st.rerun()
+
+    # ── 오답노트 모아보기 ──────────────────────────────────────────
+    if st.session_state.get("wrong_notes"):
+        st.divider()
+        with st.expander("📚 나의 오답노트 모아보기", expanded=True):
+            for i, wn in enumerate(st.session_state.wrong_notes):
+                st.markdown(f"**[{i+1}] {wn['content']}**")
+                st.markdown(f"- 정답: {wn['answer']}")
+                if wn['explanation']:
+                    st.caption(f"💡 해설: {wn['explanation']}")
+                if st.button(f"🗑️ 삭제", key=f"del_wn_{i}"):
+                    st.session_state.wrong_notes.pop(i)
+                    st.rerun()
+            if st.button("🗑️ 전체 초기화", key="clear_all_wn"):
+                st.session_state.wrong_notes = []
+                st.rerun()
 
 
 def render_chatbot() -> None:

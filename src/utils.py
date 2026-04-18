@@ -451,6 +451,47 @@ def make_pdf_bytes(md_text: str) -> bytes:
     return "", clean_output(text)
 
 
+def parse_quiz_markdown(text: str) -> list[dict]:
+    """마크다운 텍스트에서 퀴즈 문항을 추출합니다."""
+    questions = []
+    # 문항별 블록 분리 (보통 '문항 1.' 또는 '1번.' 등으로 시작)
+    blocks = re.split(r'\n(?=(?:문항\s*)?\d+[\.번])', text)
+    
+    for block in blocks:
+        if not block.strip(): continue
+        
+        # 문제 번호 및 내용
+        num_m = re.search(r'(?:문항\s*)?(\d+)[\.번]\s*(.*)', block)
+        if not num_m: continue
+        
+        num = num_m.group(1)
+        # 본문에서 옵션/정답 제외
+        content_full = num_m.group(2)
+        content_main = re.split(r'\n[\s\-\*]*[\(①\d]', content_full)[0].strip()
+        
+        # 옵션 추출 (①, ②, ③, ④ 또는 (1), (2) 등)
+        options = re.findall(r'[\(①\d][\s\)]*([^①-⑩\n\(\)]+)', block)
+        options = [o.strip() for o in options if len(o.strip()) > 1]
+        
+        # 정답 추출
+        ans_m = re.search(r'(?:정답|답)\s*[:：]?\s*([^\n]+)', block)
+        answer = ans_m.group(1).strip() if ans_m else ""
+        
+        # 해설 추출
+        explain_m = re.search(r'(?:해설)\s*[:：]?\s*(.*)', block, re.DOTALL)
+        explanation = explain_m.group(1).strip() if explain_m else ""
+        
+        questions.append({
+            "number": num,
+            "content": content_main,
+            "options": options,
+            "answer": answer,
+            "explanation": explanation,
+            "raw": block
+        })
+    return questions
+
+
 def extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
     if not _PYPDF_OK:
         return "", 0
