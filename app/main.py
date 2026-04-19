@@ -15,7 +15,7 @@ from src.models import check_lmstudio_connection, check_ollama_connection
 from app.pages import (
     render_image_analyzer, render_step_solver, render_lesson_plan,
     render_quiz_generator, render_chatbot, render_pdf_analyzer,
-    render_code_analyzer, render_feedback_form
+    render_code_analyzer, render_feedback_form, render_wrong_notes
 )
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
@@ -333,7 +333,6 @@ def main() -> None:
     elif feature == "📬 피드백 보내기":
         render_feedback_form()
     elif feature == "📓 나의 오답노트":
-        from app.pages import render_wrong_notes
         render_wrong_notes()
 
 
