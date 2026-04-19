@@ -57,7 +57,7 @@ def render_pdf_analyzer() -> None:
                               "pdf_solve_all"):
                         st.session_state.pop(k, None)
                     st.rerun()
-        _render_question_solver_ui(provider, model, api_key)
+        _render_question_solver_ui(provider, model, api_key, mode=st.session_state.get("user_mode", "교육자용"))
         return
 
     # ── 업로드 & 분석 설정 UI ────────────────────────────────────
@@ -161,6 +161,182 @@ def render_pdf_analyzer() -> None:
 
     # ── 일반 분석 결과 출력 ──────────────────────────────────────────
     _render_pdf_general_result()
+
+def _render_question_solver_ui(
+    provider: str, model: str, api_key: str, mode: str,
+) -> None:
+    """추출된 문제들을 카드 형태로 보여주고 개별/전체 풀이를 처리하는 UI"""
+    questions: list[dict] = st.session_state.get("pdf_questions", [])
+    solutions: dict = st.session_state.setdefault("pdf_solutions", {})
+    content_text: str = st.session_state.get("pdf_content_text", "")
+    images_b64 = st.session_state.get("pdf_images_b64", None)
+    method = st.session_state.get("pdf_extraction_method", "text")
+    filename = st.session_state.get("pdf_filename", "문서")
+
+    if not questions:
+        st.info("감지된 문제가 없습니다.")
+        return
+
+    badge_color = "#10b981" if method == "text" else "#f59e0b"
+    badge_label = "📝 텍스트 추출 기반" if method == "text" else "🖼️ 비전 AI 분석 기반"
+    st.markdown(
+        f'<span style="background:{badge_color}22;border:1px solid {badge_color};'
+        f'border-radius:6px;padding:3px 10px;font-size:0.8rem;color:{badge_color};">'
+        f'{badge_label}</span>'
+        f'&nbsp;&nbsp;<b style="color:#94a3b8;font-size:0.9rem;">{filename}</b>',
+        unsafe_allow_html=True,
+    )
+
+    solved_count = len(solutions)
+    st.markdown(
+        f"### 🔢 감지된 문제 — {len(questions)}개 "
+        f"<span style='color:#10b981;font-size:0.85rem;'>({solved_count}개 풀이 완료)</span>",
+        unsafe_allow_html=True,
+    )
+
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 2, 2])
+    with ctrl_col1:
+        if st.button("⚡ 전체 문제 풀이", key="solve_all_btn", use_container_width=True):
+            st.session_state.pdf_solve_all = True
+    with ctrl_col2:
+        if st.button("🗑️ 풀이 초기화", key="clear_solutions_btn", use_container_width=True):
+            st.session_state.pdf_solutions = {}
+            st.rerun()
+    with ctrl_col3:
+        if st.button("🔄 문제 재추출", key="reextract_btn", use_container_width=True):
+            for k in ("pdf_questions", "pdf_solutions", "pdf_solve_all"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    st.divider()
+
+    # 전체 풀이 진행
+    if st.session_state.get("pdf_solve_all"):
+        unsolved = [i for i in range(len(questions)) if i not in solutions]
+        if unsolved:
+            prog = st.progress(0, text="전체 풀이 진행 중...")
+            for step, idx in enumerate(unsolved):
+                q = questions[idx]
+                prog.progress((step + 1) / len(unsolved),
+                               text=f"문제 {q['number']} 풀이 중... ({step+1}/{len(unsolved)})")
+                sol = _solve_single_question(
+                    q, content_text, images_b64, provider, model, api_key, filename, mode
+                )
+                solutions[idx] = sol
+            prog.empty()
+        st.session_state.pdf_solve_all = False
+        st.rerun()
+
+    # 개별 문제 카드
+    for i, q in enumerate(questions):
+        solved = i in solutions
+        card_border = "#10b981" if solved else "#334155"
+        card_bg = "#0d1f1a" if solved else "#0f172a"
+        
+        st.markdown(
+            f'<div style="border:1px solid {card_border};border-radius:12px;'
+            f'background:{card_bg};padding:16px 20px;margin-bottom:10px;">',
+            unsafe_allow_html=True,
+        )
+
+        q_col, btn_col = st.columns([5, 1])
+        with q_col:
+            st.markdown(
+                f'<div style="display:flex;align-items:flex-start;gap:12px;">'
+                f'<span style="background:#4f46e5;color:white;border-radius:6px;'
+                f'padding:2px 10px;font-weight:700;font-size:0.85rem;white-space:nowrap;">'
+                f'{q["number"]}번</span>'
+                f'<span style="color:#e2e8f0;font-size:0.95rem;">{q["content"][:200]}'
+                f'{"..." if len(q["content"]) > 200 else ""}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with btn_col:
+            btn_label = "✅ 재풀이" if solved else "📖 풀이"
+            if st.button(btn_label, key=f"solve_q_{i}", use_container_width=True):
+                with st.spinner(f"문제 {q['number']} 풀이 생성 중..."):
+                    sol = _solve_single_question(
+                        q, content_text, images_b64, provider, model, api_key, filename, mode
+                    )
+                solutions[i] = sol
+                st.rerun()
+
+        if solved:
+            with st.expander(f"📐 문제 {q['number']} 풀이 보기", expanded=True):
+                st.markdown(solutions[i])
+                
+                orig_name = st.session_state.get("pdf_filename", "pdf")
+                base_name = os.path.splitext(orig_name)[0]
+                q_filename = safe_filename(f"{i+1}_{base_name}_Q{i+1}")
+
+                dl_col1, dl_col2 = st.columns([1, 1])
+                with dl_col1:
+                    _, final_sol = parse_thinking_response(solutions[i])
+                    st.download_button("💾 MD 저장", data=final_sol.encode('utf-8-sig'),
+                                       file_name=f"{q_filename}.md", mime="text/markdown",
+                                       key=f"dl_sol_{i}", use_container_width=True)
+                with dl_col2:
+                    pdf_bytes = make_pdf_bytes(solutions[i])
+                    if pdf_bytes:
+                        st.download_button("💾 PDF 저장", data=pdf_bytes,
+                                           file_name=f"{q_filename}.pdf", mime="application/pdf",
+                                           key=f"dl_sol_pdf_{i}", use_container_width=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # 전체 합본 저장
+    if solutions:
+        all_sols = "\n\n---\n\n".join(
+            f"## 문제 {questions[i]['number']}\n{questions[i]['content']}\n\n### 풀이\n{sol}"
+            for i, sol in sorted(solutions.items())
+        )
+        orig_name = st.session_state.get("pdf_filename", "pdf")
+        base_name = os.path.splitext(orig_name)[0]
+        all_filename = safe_filename(f"{base_name}_전체풀이")
+
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            _, final_all = parse_thinking_response(all_sols)
+            st.download_button("💾 전체 풀이 저장 (.md)", data=final_all.encode('utf-8-sig'),
+                               file_name=f"{all_filename}.md", mime="text/markdown",
+                               key="dl_all_solutions", use_container_width=True)
+        with col2:
+            pdf_bytes = make_pdf_bytes(all_sols)
+            if pdf_bytes:
+                st.download_button("💾 전체 풀이 저장 (.pdf)", data=pdf_bytes,
+                                   file_name=f"{all_filename}.pdf", mime="application/pdf",
+                                   key="dl_all_solutions_pdf", use_container_width=True)
+
+
+def _solve_single_question(
+    q: dict, content_text: str, images_b64: list[str] | None,
+    provider: str, model: str, api_key: str, filename: str, mode: str,
+) -> str:
+    """문제 하나에 대해 AI에 풀이 요청"""
+    context = ""
+    if content_text:
+        # 가급적 문제 주변 텍스트 2500자 정도를 컨텍스트로 제공
+        needle = q["content"][:50]
+        idx = content_text.find(needle)
+        if idx >= 0:
+            start = max(0, idx - 500)
+            end = min(len(content_text), idx + 2000)
+            context = content_text[start:end]
+        else:
+            context = content_text[:3000]
+
+    system = SYSTEM_PROMPTS.get("step_solver", MATH_INSTRUCTION)
+    if provider == P.LMSTUDIO:
+        system = "<|think|>\n" + system
+
+    user_prompt = f"[문서: {filename}]\n\n**문제 {q['number']}번**\n{q['content']}\n\n"
+    if context:
+        user_prompt += f"[문서 내 관련 컨텍스트]\n{context}\n\n"
+    user_prompt += f"이 문제를 [{mode}]의 요구사항에 맞춰 단계별로 자세히 풀어주세요."
+
+    return call_ai(system, user_prompt, provider, model, api_key,
+                   images_b64=images_b64 if not context else None)
 
 
 def _run_pdf_analysis(
