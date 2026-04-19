@@ -30,34 +30,75 @@
 
 ---
 
-## 🏗 시스템 아키텍처 (Modular Architecture)
+---
 
-본 프로젝트는 유지보수성과 확장성을 위해 기능별로 독립된 모듈 구조를 채택하고 있습니다.
+## 🏗 시스템 아키텍처 (System Architecture)
 
-### 📦 `app/pages/` - 모듈형 UI 레이어
-- **`_quiz_generator.py`**: 퀴즈 생성 및 풀이 로직 엔진.
-- **`_wrong_notes.py`**: 과목별 오답 관리 및 필터링 시스템.
-- **`_lesson_plan.py`**: 교사용 수업 지도안 및 평가 계획서 생성기.
-- **`_pdf_analyzer.py`**: 대용량 문서 분석 및 요약.
-*외 7종의 독립 기능 모듈*
+본 프로젝트는 대규모 언어 모델(LLM)과 문서 분석 엔진을 유연하게 결합한 **하이브리드 시스템 아키텍처**를 채택하고 있습니다.
 
-### 📦 `src/` - 핵심 비즈니스 로직
-- **`app_utils.py`**: PDF 이미지 추출, JSON 수선(json-repair), LaTeX 수식 정규화 등 핵심 유틸리티.
-- **`models.py`**: OpenAI, Gemini, Claude 및 로컬 LLM 통신 표준화 계층.
-- **`config.py`**: `SUBJECT_LIST` 및 전역 파라미터 관리.
+### 📊 시스템 아키텍처 다이어그램
+```mermaid
+graph TD
+    subgraph UI_Layer [User Interface Layer - Streamlit]
+        User((사용자)) <--> Sidebar[글로벌 사이드바\n페르소나/모델/키 설정]
+        Sidebar --> Nav[메뉴 내비게이션]
+        Nav --> P1[퀴즈 생성/풀이]
+        Nav --> P2[나의 오답노트]
+        Nav --> P3[교안/자료 생성]
+        Nav --> P4[기타 분석기]
+        
+        Session[(Streamlit Session State\n데이터 유지/오답 저장)] <--> Nav
+    end
+
+    subgraph Logic_Layer [Business & Processing Layer]
+        P1 & P2 & P3 --> Utils[src/app_utils.py\n핵심 처리 유틸]
+        Utils --> JsonFix[json-repair\n유연한 JSON 파서]
+        Utils --> PDFProc[PyMuPDF / pypdf\n하이브리드 추출기]
+        Utils --> Vision[PIL / 이미지 전처리]
+    end
+
+    subgraph AI_Core [AI Dispatcher Layer]
+        P1 & P2 & P3 --> AI_Models[src/models.py\n통합 디스패처]
+        AI_Models --> OpenAI[OpenAI API]
+        AI_Models --> Gemini[Google Gemini]
+        AI_Models --> Claude[Anthropic Claude]
+        AI_Models --> LocalLLM[Local: LM Studio / Ollama]
+    end
+
+    subgraph Storage [Export & Outcome]
+        Utils --> PDF_Eng[WeasyPrint\nPDF 렌더링]
+        PDF_Eng --> PDF_Out[💾 고품질 PDF 저장]
+        Utils --> MD_Out[💾 Markdown 내보내기]
+    end
+
+    style UI_Layer fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style Logic_Layer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style AI_Core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Storage fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
+### 🧱 계층별 상세 설명
+
+#### 1. **User Interface Layer**
+- **모듈화된 라우팅**: `app/pages/` 하위의 독립적인 파일들이 기능을 담당하며 `main.py`가 이를 조율합니다.
+- **상태 관리**: `st.session_state`를 통해 퀴즈 결과, 오답 목록, 사용자 설정 등을 전역적으로 공유합니다.
+- **반응형 디자인**: 커스텀 CSS와 Glassmorphism 스타일을 적용하여 프리미엄 학습 환경을 제공합니다.
+
+#### 2. **Business & Processing Layer**
+- **Robust Parser**: AI의 응답이 불완전하더라도 `json-repair`를 통해 유효한 데이터로 복구하여 시스템 안정성을 보장합니다.
+- **Document Engine**: PDF의 텍스트 레이아웃 손실을 최소화하기 위해 `PyMuPDF`의 인지 기반 추출과 `pypdf`의 구조적 추출을 병행합니다.
+
+#### 3. **AI Dispatcher Layer**
+- **통합 인터페이스**: 각기 다른 LLM 제공자들의 API 명세를 단일화하여 개발 효율성을 높였습니다.
+- **BYOK (Bring Your Own Key)**: 서버 비용 부담 없이 사용자가 자신의 리소스를 안전하게 사용할 수 있도록 설계되었습니다.
+
+#### 4. **Export & Outcome Layer**
+- **High-Fidelity PDF**: Markdown에서 HTML을 거쳐 WeasyPrint로 렌더링되는 파이프라인을 통해 학습지에 최적화된 PDF를 생성합니다.
+- **LaTeX Math Support**: 모든 렌더링 과정에서 복잡한 수학 수식을 완벽하게 보존합니다.
 
 ---
 
-## 🔑 운영 모델 (BYOK - Bring Your Own Key)
-
-본 플랫폼은 사용자의 프라이버시와 투명한 비용 관리를 위해 **BYOK 모델**로 운영됩니다.
-
-- **개인 키 사용**: 사용자가 보유한 개별 API Key(OpenAI, Gemini 등)를 직접 활용하여 API 비용을 투명하게 관리합니다.
-- **로컬 LLM 연동**: 보안이 중요한 자료는 LM Studio, Ollama 등을 통해 외부 유출 없이 로컬 환경에서만 처리할 수 있습니다.
-
----
-
-## 🛠 기술 스택
+## 📂 코드 구조 상세
 - **Language**: Python 3.10+
 - **Frontend**: Streamlit (with Custom CSS / Glassmorphism)
 - **AI Backend**: OpenAI SDK, Google Generative AI, Anthropic API
