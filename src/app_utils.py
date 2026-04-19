@@ -175,6 +175,17 @@ def parse_quiz_markdown(text: str) -> list[dict]:
         
     return questions
 
+def clean_text_symbols(text: str) -> str:
+    """텍스트 내의 불필요한 수학 기호($) 및 코드 백틱 중복 문제를 정제합니다."""
+    if not text: return ""
+    # 1. 백틱 안의 $, \(, \) 기호 제거 (예: `$code$`, `\(math\)` -> `code`, `math`)
+    text = re.sub(r'`[\$\\]*\(?([^`\$]+?)[\$\\]*\)?`', r'`\1`', text)
+    # 2. 백틱 없이 $만 남은 중복 기호 제거 (예: $$$ -> $$)
+    text = re.sub(r'\${3,}', '$$', text)
+    # 3. 이스케이프된 특수문자 복원
+    text = text.replace("\\*\\*", "**").replace("\\*", "*")
+    return text.strip()
+
 def parse_quiz_json(text: str) -> list[dict]:
     """텍스트 내의 JSON 블록을 찾아 추출하고 리스트 형태로 반환합니다."""
     # 0. 전처리: AI가 제멋대로 붙이는 인사말이나 아웃트로 텍스트 제거
@@ -214,10 +225,13 @@ def parse_quiz_json(text: str) -> list[dict]:
         for q in data:
             q.setdefault("number", "1")
             q.setdefault("type", "multiple_choice" if q.get("options") else "short_answer")
-            q.setdefault("content", str(q.get("content", "")))
-            q.setdefault("options", q.get("options", []))
-            q.setdefault("answer", str(q.get("answer", "")))
-            q.setdefault("explanation", str(q.get("explanation", "")))
+            
+            # 모든 텍스트 필드 정제
+            q["content"] = clean_text_symbols(str(q.get("content", "")))
+            q["answer"] = clean_text_symbols(str(q.get("answer", "")))
+            q["explanation"] = clean_text_symbols(str(q.get("explanation", "")))
+            if q.get("options"):
+                q["options"] = [clean_text_symbols(str(opt)) for opt in q["options"]]
             
             # 타입이 multiple_choice인데 문항 내용에 보기가 섞여들어온 경우 처리
             if q["type"] == "multiple_choice" and not q["options"]:
@@ -264,12 +278,11 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         # 1. 수식 내 $ 중복 제거 및 백틱 오류 등 기본 전처리
         def repl_block(match): return match.group(0).replace("$", "")
         content = re.sub(r"```[\s\S]*?```", repl_block, content)
-        # 백틱 안의 $, \(, \) 기호 제거 (예: `$code$`, `\(math\)` -> `code`, `math`)
-        content = re.sub(r'`[\$\\]*\(?([^`\$]+?)[\$\\]*\)?`', r'`\1`', content)
-        # 백틱 없이 $만 남은 중복 기호 제거 (예: $$$ -> $$)
-        content = re.sub(r'\${3,}', '$$', content)
+        
+        # 공통 기호 정제 로직 사용
+        content = clean_text_symbols(content)
+        
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
-        content = content.replace("\\*\\*", "**").replace("\\*", "*")
         
         # 2. n지선다 줄바꿈 처리
         placeholders = {}
