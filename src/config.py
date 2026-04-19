@@ -57,4 +57,7 @@ LMSTUDIO_PREFERRED = [
 DEFAULT_SAMPLING = {"temperature": 1.0, "top_p": 0.95}
 MAX_IMAGE_SIZE   = 1920
 
+
 _PDF_TEXT_MIN_CHARS_PER_PAGE = 80
+
+SUBJECT_LIST = ["국어", "영어", "수학", "과학", "사회", "역사", "도덕", "음악", "미술", "체육", "기술·가정", "프로그래밍", "기타"]

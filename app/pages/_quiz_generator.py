@@ -18,7 +18,7 @@ try:
 except ImportError:
     _FITZ_OK = False
 
-from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
+from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES, SUBJECT_LIST
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
 from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
@@ -60,16 +60,21 @@ def render_quiz_generator() -> None:
     else:
         ups = st.file_uploader("관련 PDF 자료 업로드 (다중 선택 가능)", type=["pdf"], key="quiz_pdf_upload", accept_multiple_files=True)
 
-    c1, c2, c3 = st.columns(3)
+    with st.expander("⚙️ 세부 설정", expanded=True):
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            quiz_subject = st.selectbox("과목 카테고리 (오답노트 분류용)", SUBJECT_LIST, key="quiz_subject_select")
+        with sc2:
+            difficulty = st.select_slider("난이도", ["하", "중하", "중", "중상", "상"],
+                                          value="중", key="quiz_difficulty")
+
+    c1, c2 = st.columns(2)
     with c1:
         q_types = st.multiselect("문항 유형",
             ["선택형(4지선다)", "단답형", "서술형", "참/거짓", "빈칸 채우기"],
             default=["선택형(4지선다)", "단답형"], key="quiz_types")
     with c2:
         num_q = st.slider("문항 수", 1, 20, 5, key="quiz_count")
-    with c3:
-        difficulty = st.select_slider("난이도", ["하", "중하", "중", "중상", "상"],
-                                      value="중", key="quiz_difficulty")
 
     if st.button("🎯 문항 생성", key="btn_quiz", use_container_width=True):
         img_list = []
@@ -144,6 +149,8 @@ def render_quiz_generator() -> None:
             with st.spinner("🤖 AI가 평가 문항을 출제하는 중..."):
                 result = call_ai(system, full_prompt, provider, model, api_key,
                                  images_b64=img_list if img_list else None)
+            
+            st.session_state.quiz_current_subject = quiz_subject # 현재 과목 저장
             
             from src.app_utils import parse_quiz_json, questions_to_markdown
             
@@ -288,27 +295,13 @@ def render_quiz_generator() -> None:
                         if st.button(f"📌 오답노트에 담기 ({q['number']}번)", key=f"btn_mark_wrong_{idx}"):
                              w_notes = st.session_state.get("wrong_notes", [])
                              if q['content'] not in [wn['content'] for wn in w_notes]:
-                                 w_notes.append(q)
+                                 # 과목 정보 추가하여 저장
+                                 q_to_save = q.copy()
+                                 q_to_save['subject'] = st.session_state.get("quiz_current_subject", "기타")
+                                 w_notes.append(q_to_save)
                                  st.session_state.wrong_notes = w_notes
-                                 st.toast(f"{q['number']}번 문제가 오답노트에 저장되었습니다!")
+                                 st.toast(f"[{q_to_save['subject']}] {q['number']}번이 오답노트에 저장되었습니다!")
 
         if st.button("🔙 목록으로 돌아가기", key="btn_back_to_list"):
             st.session_state.quiz_solving_mode = False
             st.rerun()
-
-    # ── 오답노트 모아보기 ──────────────────────────────────────────
-    if st.session_state.get("wrong_notes"):
-        st.divider()
-        with st.expander("📚 나의 오답노트 모아보기", expanded=True):
-            for i, wn in enumerate(st.session_state.wrong_notes):
-                st.markdown(f"**[{i+1}] {wn['content']}**")
-                st.markdown(f"- 정답: {wn['answer']}")
-                if wn['explanation']:
-                    st.caption(f"💡 해설: {wn['explanation']}")
-                if st.button(f"🗑️ 삭제", key=f"del_wn_{i}"):
-                    st.session_state.wrong_notes.pop(i)
-                    st.rerun()
-            if st.button("🗑️ 전체 초기화", key="clear_all_wn"):
-                st.session_state.wrong_notes = []
-                st.rerun()
-

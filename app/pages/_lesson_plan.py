@@ -18,7 +18,7 @@ try:
 except ImportError:
     _FITZ_OK = False
 
-from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
+from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES, SUBJECT_LIST
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
 from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
@@ -44,9 +44,7 @@ def render_lesson_plan() -> None:
 
     col1, col2 = st.columns([1, 1])
     with col1:
-        subject = st.selectbox("과목",
-            ["국어", "영어", "수학", "과학", "사회", "역사", "도덕",
-             "음악", "미술", "체육", "기술·가정", "프로그래밍", "기타"], key="plan_subject")
+        subject = st.selectbox("과목", SUBJECT_LIST, key="plan_subject")
         grade = st.selectbox("학년",
             ["초등 1학년", "초등 2학년", "초등 3학년", "초등 4학년", "초등 5학년", "초등 6학년",
              "중학 1학년", "중학 2학년", "중학 3학년",
