@@ -297,7 +297,14 @@ def render_quiz_generator() -> None:
                              if q['content'] not in [wn['content'] for wn in w_notes]:
                                  # 과목 정보 추가하여 저장
                                  q_to_save = q.copy()
-                                 q_to_save['subject'] = st.session_state.get("quiz_current_subject", "기타")
+                                 
+                                 # 자동 추론인 경우 AI가 분석한 과목 우선 사용
+                                 selected_subj = st.session_state.get("quiz_current_subject", "자동 추론")
+                                 if selected_subj == "자동 추론":
+                                     q_to_save['subject'] = q.get('subject', '기타')
+                                 else:
+                                     q_to_save['subject'] = selected_subj
+                                     
                                  w_notes.append(q_to_save)
                                  st.session_state.wrong_notes = w_notes
                                  st.toast(f"[{q_to_save['subject']}] {q['number']}번이 오답노트에 저장되었습니다!")

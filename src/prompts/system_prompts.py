@@ -91,7 +91,8 @@ SYSTEM_PROMPTS = {
     "options": ["1) 보기1", "2) 보기2", "3) 보기3", "4) 보기4"],
     "answer": "정답 번호",
     "explanation": "- 해설 내용",
-    "evaluation": "평가 요소"
+    "evaluation": "평가 요소",
+    "subject": "과목명(예: 수학, 과학 등)"
   }}
 ]
 
