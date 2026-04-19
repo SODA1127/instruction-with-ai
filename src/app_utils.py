@@ -436,6 +436,54 @@ def _pdf_extract_content(file_bytes, page_count, page_range=""):
     
     return extracted_text, [], "text (sparse)"
 
-def _parse_question_list(text):
-    # 상위 호환을 위한 더미 함수 혹은 간단한 파서
-    return []
+def _parse_question_list(text: str) -> list[dict]:
+    """AI가 반환한 문제 목록(JSON 형태)을 파싱하여 표준화된 리스트로 반환합니다."""
+    import json
+    try:
+        from json_repair import repair_json
+    except ImportError:
+        def repair_json(t): return t
+
+    # 1. JSON 블록 추출 시도
+    json_str = text.strip()
+    # [ ] 형태의 배열 탐색
+    match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', text)
+    if match:
+        json_str = match.group(0)
+    else:
+        # ```json ... ``` 형태 탐색
+        match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        if match:
+            json_str = match.group(1)
+
+    try:
+        # JSON 복구 및 파싱
+        repaired = repair_json(json_str)
+        data = json.loads(repaired)
+
+        if not isinstance(data, list):
+            if isinstance(data, dict):
+                if "questions" in data: data = data["questions"]
+                elif "items" in data: data = data["items"]
+                else: data = [data]
+            else:
+                return []
+
+        # 키값 표준화 및 데이터 정제
+        refined = []
+        for i, item in enumerate(data):
+            if not isinstance(item, dict): continue
+            
+            # 다양한 언어/형태의 키값 지원
+            num = str(item.get("번호", item.get("number", item.get("no", i + 1))))
+            content = str(item.get("내용", item.get("content", item.get("text", ""))))
+            
+            if content.strip():
+                refined.append({
+                    "number": num.strip(),
+                    "content": content.strip()
+                })
+        return refined
+    except Exception as e:
+        print(f"Error parsing question list: {e}")
+        return []
