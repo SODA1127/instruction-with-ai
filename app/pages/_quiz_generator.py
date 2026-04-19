@@ -74,7 +74,7 @@ def render_quiz_generator() -> None:
             ["선택형(4지선다)", "단답형", "서술형", "참/거짓", "빈칸 채우기"],
             default=["선택형(4지선다)", "단답형"], key="quiz_types")
     with c2:
-        num_q = st.slider("문항 수", 1, 50, 5, key="quiz_count")
+        num_q = st.slider("문항 수", 1, 50, 5, key="quiz_count_v2")
 
     if st.button("🎯 문항 생성", key="btn_quiz", use_container_width=True):
         img_list = []
