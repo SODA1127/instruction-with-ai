@@ -466,7 +466,7 @@ def render_quiz_generator() -> None:
                 st.session_state.quiz_graded = False
                 st.rerun()
 
-    # ── 퀴즈 직접 풀어보기 UI ──────────────────────────────────────
+    # ── 퀴즈 직접 풀어보기 UI (대화형) ──────────────────────────────
     if st.session_state.get("quiz_solving_mode") and st.session_state.get("quiz_solved_data"):
         st.divider()
         st.subheader("✍️ 스마트 퀴즈 풀이")

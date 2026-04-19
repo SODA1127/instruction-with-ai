@@ -11,8 +11,9 @@ raw = """문항
 💡 학습 팁: 비트겐슈타인 = "언어의 한계 = 세계의 한계" 공식으로 기억해 두세요!
 🎯 평가 요소: 기억 및 이해 (학자의 핵심 철학 이해)"""
 
-_, cleaned = parse_thinking_response(raw)
-qs = parse_quiz_markdown(cleaned)
+# DO NOT RUN parse_thinking_response cleanly, suppose the text in state was ALREADY generated without correct splitting!
+qs = parse_quiz_markdown(raw)
+
 for i, q in enumerate(qs):
     print(f"--- Q{q['number']} ---")
     print(f"Content: {q['content']}")
