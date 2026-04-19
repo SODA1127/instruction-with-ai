@@ -264,7 +264,10 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         # 1. 수식 내 $ 중복 제거 및 백틱 오류 등 기본 전처리
         def repl_block(match): return match.group(0).replace("$", "")
         content = re.sub(r"```[\s\S]*?```", repl_block, content)
-        content = re.sub(r'`(\$[^`\$]+\$)`', r'\1', content)
+        # 백틱 안의 $, \(, \) 기호 제거 (예: `$code$`, `\(math\)` -> `code`, `math`)
+        content = re.sub(r'`[\$\\]*\(?([^`\$]+?)[\$\\]*\)?`', r'`\1`', content)
+        # 백틱 없이 $만 남은 중복 기호 제거 (예: $$$ -> $$)
+        content = re.sub(r'\${3,}', '$$', content)
         content = re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
         content = content.replace("\\*\\*", "**").replace("\\*", "*")
         

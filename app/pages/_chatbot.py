@@ -48,7 +48,10 @@ def render_chatbot() -> None:
     for msg in st.session_state.chat_history:
         avatar = "🎓" if msg["role"] == "assistant" else "🙋"
         with st.chat_message(msg["role"], avatar=avatar):
-            st.markdown(msg["content"])
+            # 출력 시에도 혹시 모를 전처리를 수행하여 가독성 확보
+            from src.app_utils import parse_thinking_response
+            _, clean_msg = parse_thinking_response("<|channel>thought\n<channel|>" + msg["content"])
+            st.markdown(clean_msg)
 
     user_input = st.chat_input("고민이나 질문을 입력하세요...")
 
