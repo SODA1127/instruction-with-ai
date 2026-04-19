@@ -45,7 +45,7 @@ def render_sidebar() -> str:
         feature = st.radio("🔧 기능 선택", [
             "📸 이미지 문제 분석기", "📑 PDF 문서 분석기", "🧠 단계별 풀이 생성기",
             "📄 교안 생성기", "📝 평가문항 생성기", "💻 프로그래밍 코드 분석기", "💬 교육 상담 챗봇",
-            "📬 피드백 보내기",
+            "📬 피드백 보내기", "📓 나의 오답노트"
         ], key="selected_feature")
 
         st.divider()
@@ -178,8 +178,21 @@ def _render_cloud_config(provider: str) -> None:
         cookie_val = cookie_manager.get(cookie_name)
         if cookie_val:
             st.session_state[session_key] = cookie_val
+            # Streamlit 텍스트 인풋이 초기 렌더링된 후 빈칸으로 잠기는 현상을 방지하기 위해 강제 주입
+            st.session_state[f"api_key_input_{provider}"] = cookie_val
 
     saved_key = st.session_state.get(session_key, "")
+
+    def on_api_key_change():
+        new_val = st.session_state[f"api_key_input_{provider}"]
+        st.session_state[session_key] = new_val
+        st.session_state.api_key = new_val
+        import datetime
+        expires = datetime.datetime.now() + datetime.timedelta(days=365)
+        if new_val:
+            cookie_manager.set(cookie_name, new_val, expires_at=expires)
+        else:
+            cookie_manager.delete(cookie_name)
 
     # API 키 입력 필드 (on_change를 사용해 쿠키 업데이트)
     api_key = st.text_input(
@@ -187,22 +200,17 @@ def _render_cloud_config(provider: str) -> None:
         value=saved_key, 
         type="password", 
         key=f"api_key_input_{provider}", 
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        on_change=on_api_key_change
     )
     st.markdown(f"<small>🔗 <a href='{hint_url}' target='_blank'>발급받기</a></small>", unsafe_allow_html=True)
-
+    
+    # Update explicit bindings manually when setting values from cookie during load 
     if api_key:
-        st.session_state[session_key] = api_key
         st.session_state.api_key = api_key
-        # 쿠키에 저장 (만료일 약 30일 설정)
-        if api_key != saved_key:
-            cookie_manager.set(cookie_name, api_key, expires_at=None) 
     else:
         st.session_state.api_key = ""
-        # 키가 비어있으면 쿠키 삭제
-        if saved_key:
-            cookie_manager.delete(cookie_name)
-
+        
     st.markdown("**🤖 모델 선택**")
     models = PROVIDER_MODELS[provider] + [CUSTOM_MODEL_OPTION]
     sel = st.selectbox("모델", models, key=f"sel_cloud_{provider}", label_visibility="collapsed")
@@ -232,6 +240,7 @@ def main() -> None:
     )
     # 쿠키 매니저 초기화
     cookie_manager = get_cookie_manager()
+    st.session_state.cookie_manager = cookie_manager
 
     st.markdown("""
     <style>
@@ -278,6 +287,11 @@ def main() -> None:
     [data-testid="stSidebar"] .stRadio label {
         font-size: .9rem; padding: 4px 0; cursor: pointer;
     }
+
+    /* Streamlit MPA 기본 사이드바 내비게이션 숨김 처리 (커스텀 메뉴와 겹침 방지) */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -318,6 +332,9 @@ def main() -> None:
         render_chatbot()
     elif feature == "📬 피드백 보내기":
         render_feedback_form()
+    elif feature == "📓 나의 오답노트":
+        from app.pages import render_wrong_notes
+        render_wrong_notes()
 
 
 if __name__ == "__main__":
