@@ -1,4 +1,4 @@
-# Force rebuild trigger: 2026-04-20 00:45
+# Force rebuild trigger: 2026-04-20 16:38
 streamlit>=1.30.0
 pypdf>=4.0.0
 PyMuPDF>=1.23.0
@@ -16,4 +16,5 @@ matplotlib>=3.8
 json-repair>=0.14.0
 extra-streamlit-components
 supabase>=2.3.0
-st-google-auth>=0.1.0
+google-auth-oauthlib
+google-auth

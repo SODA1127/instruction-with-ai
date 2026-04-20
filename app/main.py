@@ -17,11 +17,8 @@ from app.pages import (
     render_quiz_generator, render_chatbot, render_pdf_analyzer,
     render_code_analyzer, render_feedback_form, render_wrong_notes
 )
-from src.db_manager import db
-try:
-    from st_google_auth import st_google_auth
-except ImportError:
-    st_google_auth = None
+import src.db_manager as db
+from src.st_google_auth import st_google_auth
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
 
@@ -43,45 +40,86 @@ def _get_api_key_cookie_name(provider: str) -> str:
 def render_sidebar() -> str:
     """사이드바 렌더링 및 프로바이더 설정."""
     with st.sidebar:
-        # --- [추가] 로그인 및 프로필 섹션 ---
-        auth_info = None
-        if st_google_auth:
-            google_conf = st.secrets.get("google_auth")
-            if google_conf:
-                try:
-                    auth_info = st_google_auth(
-                        client_id=google_conf.get("client_id", ""),
-                        client_secret=google_conf.get("client_secret", ""),
-                        redirect_uri=google_conf.get("redirect_uri", "http://localhost:8501")
-                    )
-                except Exception as e:
-                    st.sidebar.error(f"⚠️ 인증 오류: {e}")
+        # --- 🔑 구글 로그인 세션 관리 ---
+        auth_info = st.session_state.get("google_user_info")
+        cookie_manager = get_cookie_manager()
+        
+        # 1. 쿠키에서 로그인 정보 복구 시도 (세션이 비어있을 때만)
+        if not auth_info:
+            try:
+                saved_user = cookie_manager.get("st_google_user_data")
+                if saved_user:
+                    st.session_state["google_user_info"] = saved_user
+                    auth_info = saved_user
+                    # 쿠키에서 복구했을 때도 UI 즉시 갱신을 위해 rerun 고려 가능하나 생략
+            except Exception:
+                pass
 
+        # 2. 구글 OAuth 로그인 처리
+        google_conf = st.secrets.get("google_auth")
+        if google_conf and not auth_info:
+            try:
+                red_uri = google_conf.get("redirect_uri", "http://localhost:8501")
+                # st_google_auth 내부에서 성공 시 rerun()을 호출하므로, 
+                # 성공하면 이 아래 줄들은 실행되지 않고 스크립트가 처음부터 다시 시작됨
+                auth_info = st_google_auth(
+                    client_id=google_conf.get("client_id", ""),
+                    client_secret=google_conf.get("client_secret", ""),
+                    redirect_uri=red_uri
+                )
+                
+                # 주의: st_google_auth 내부에서 rerun을 하므로 여기 auth_info는 
+                # OAuth 처리 중에는 None이거나, 처리가 끝난 후에는 rerun으로 인해 도달하지 않음.
+                # 단, st_google_auth가 성공했음에도 rerun이 안 되는 특수 상황을 대비해 세션 저장
+                if auth_info:
+                    st.session_state["google_user_info"] = auth_info
+            except Exception as e:
+                st.error(f"로그인 처리 중 오류: {e}")
+
+        # 3. 로그인 성공 후 프로필 표시 및 쿠키 유지
         if auth_info:
-            st.session_state.user = auth_info
-            # DB 동기화
+            # 쿠키가 아직 없으면 저장 (방금 로그인 성공한 경우)
+            try:
+                if not cookie_manager.get("st_google_user_data"):
+                    import datetime
+                    # 만료일 7일 설정
+                    expires = datetime.datetime.now() + datetime.timedelta(days=7)
+                    cookie_manager.set("st_google_user_data", auth_info, expires_at=expires)
+            except Exception:
+                pass
+
+            # 프로필 DB 업데이트
             try:
                 db.upsert_profile(
-                    user_id=auth_info.get("sub"), # Google 고유 ID
+                    user_id=auth_info.get("sub"),
                     email=auth_info.get("email"),
                     full_name=auth_info.get("name"),
                     avatar_url=auth_info.get("picture")
                 )
-            except Exception: pass
+            except Exception:
+                pass
             
             # 프로필 UI
-            cols = st.columns([1, 3])
-            with cols[0]:
-                st.image(auth_info.get("picture", ""), width=50)
-            with cols[1]:
-                st.markdown(f"**{auth_info.get('name')}**님")
-                st.caption(auth_info.get("email"))
-            if st.button("로그아웃", key="logout_btn", use_container_width=True):
+            p_url = auth_info.get("picture", "").replace("=s96-c", "=s128-c") if auth_info.get("picture") else ""
+            st.markdown(f'''
+                <div class="profile-container">
+                    <img src="{p_url}" class="profile-img">
+                    <div class="profile-info">
+                        <span class="profile-name">{auth_info.get('name')}님</span>
+                        <span class="profile-email">{auth_info.get('email')}</span>
+                    </div>
+                </div>
+            ''', unsafe_allow_html=True)
+            
+            if st.button("🚪 로그아웃", key="logout_btn", use_container_width=True):
+                cookie_manager.delete("st_google_user_data")
+                st.session_state["google_user_info"] = None
                 st.session_state.clear()
                 st.rerun()
         else:
-            st.session_state.user = None
-            st.info("💡 로그인이 필요합니다.")
+            # 인증 진행 중(code가 URL에 있음)이 아닐 때만 로그인이 필요함 메시지 표시
+            if not st.query_params.get("code"):
+                st.info("👋 로그인이 필요합니다.")
 
         st.divider()
         st.markdown('<div class="app-title">🎓 AI 통합 학습 도우미</div>', unsafe_allow_html=True)
@@ -243,7 +281,6 @@ def _render_cloud_config(provider: str) -> None:
     # API 키 입력 필드 (on_change를 사용해 쿠키 업데이트)
     api_key = st.text_input(
         "API 키 입력", 
-        value=saved_key, 
         type="password", 
         key=f"api_key_input_{provider}", 
         label_visibility="collapsed",
@@ -338,6 +375,20 @@ def main() -> None:
     [data-testid="stSidebarNav"] {
         display: none !important;
     }
+
+    /* 프로필 UI 스타일 */
+    .profile-container {
+        display: flex; align-items: center; padding: 15px;
+        background: rgba(255, 255, 255, 0.05); border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 5px;
+    }
+    .profile-img {
+        width: 45px; height: 45px; border-radius: 50%;
+        border: 2px solid #818cf8; object-fit: cover; margin-right: 12px;
+    }
+    .profile-info { display: flex; flex-direction: column; overflow: hidden; }
+    .profile-name { font-weight: 700; font-size: 0.9rem; color: #ffffff !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .profile-email { font-size: 0.7rem; color: rgba(255, 255, 255, 0.6) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>
     """, unsafe_allow_html=True)
 
