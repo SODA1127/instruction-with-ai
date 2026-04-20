@@ -18,7 +18,7 @@ from app.pages import (
     render_code_analyzer, render_feedback_form, render_wrong_notes
 )
 import src.db_manager as db
-from src.st_google_auth import st_google_auth
+# from src.st_google_auth import st_google_auth  # 더 이상 필요 없음
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
 
@@ -40,86 +40,37 @@ def _get_api_key_cookie_name(provider: str) -> str:
 def render_sidebar() -> str:
     """사이드바 렌더링 및 프로바이더 설정."""
     with st.sidebar:
-        # --- 🔑 구글 로그인 세션 관리 ---
-        auth_info = st.session_state.get("google_user_info")
-        cookie_manager = get_cookie_manager()
-        
-        # 1. 쿠키에서 로그인 정보 복구 시도 (세션이 비어있을 때만)
-        if not auth_info:
-            try:
-                saved_user = cookie_manager.get("st_google_user_data")
-                if saved_user:
-                    st.session_state["google_user_info"] = saved_user
-                    auth_info = saved_user
-                    # 쿠키에서 복구했을 때도 UI 즉시 갱신을 위해 rerun 고려 가능하나 생략
-            except Exception:
-                pass
-
-        # 2. 구글 OAuth 로그인 처리
-        google_conf = st.secrets.get("google_auth")
-        if google_conf and not auth_info:
-            try:
-                red_uri = google_conf.get("redirect_uri", "http://localhost:8501")
-                # st_google_auth 내부에서 성공 시 rerun()을 호출하므로, 
-                # 성공하면 이 아래 줄들은 실행되지 않고 스크립트가 처음부터 다시 시작됨
-                auth_info = st_google_auth(
-                    client_id=google_conf.get("client_id", ""),
-                    client_secret=google_conf.get("client_secret", ""),
-                    redirect_uri=red_uri
-                )
-                
-                # 주의: st_google_auth 내부에서 rerun을 하므로 여기 auth_info는 
-                # OAuth 처리 중에는 None이거나, 처리가 끝난 후에는 rerun으로 인해 도달하지 않음.
-                # 단, st_google_auth가 성공했음에도 rerun이 안 되는 특수 상황을 대비해 세션 저장
-                if auth_info:
-                    st.session_state["google_user_info"] = auth_info
-            except Exception as e:
-                st.error(f"로그인 처리 중 오류: {e}")
-
-        # 3. 로그인 성공 후 프로필 표시 및 쿠키 유지
-        if auth_info:
-            # 쿠키가 아직 없으면 저장 (방금 로그인 성공한 경우)
-            try:
-                if not cookie_manager.get("st_google_user_data"):
-                    import datetime
-                    # 만료일 7일 설정
-                    expires = datetime.datetime.now() + datetime.timedelta(days=7)
-                    cookie_manager.set("st_google_user_data", auth_info, expires_at=expires)
-            except Exception:
-                pass
-
-            # 프로필 DB 업데이트
+        # --- 🔑 Streamlit Native Google Auth (v1.42.0+) ---
+        if not st.user.is_logged_in:
+            st.info("👋 로그인이 필요합니다.")
+            if st.button("🔑 Google 계정으로 로그인", use_container_width=True):
+                st.login("google")
+        else:
+            # 로그인 성공 후 프로필 DB 업데이트
             try:
                 db.upsert_profile(
-                    user_id=auth_info.get("sub"),
-                    email=auth_info.get("email"),
-                    full_name=auth_info.get("name"),
-                    avatar_url=auth_info.get("picture")
+                    user_id=st.user.get("sub"),
+                    email=st.user.email,
+                    full_name=st.user.name,
+                    avatar_url=st.user.get("picture")
                 )
             except Exception:
                 pass
             
             # 프로필 UI
-            p_url = auth_info.get("picture", "").replace("=s96-c", "=s128-c") if auth_info.get("picture") else ""
+            p_url = st.user.get("picture", "").replace("=s96-c", "=s128-c") if st.user.get("picture") else ""
             st.markdown(f'''
                 <div class="profile-container">
                     <img src="{p_url}" class="profile-img">
                     <div class="profile-info">
-                        <span class="profile-name">{auth_info.get('name')}님</span>
-                        <span class="profile-email">{auth_info.get('email')}</span>
+                        <span class="profile-name">{st.user.name}님</span>
+                        <span class="profile-email">{st.user.email}</span>
                     </div>
                 </div>
             ''', unsafe_allow_html=True)
             
-            if st.button("🚪 로그아웃", key="logout_btn", use_container_width=True):
-                cookie_manager.delete("st_google_user_data")
-                st.session_state["google_user_info"] = None
-                st.session_state.clear()
-                st.rerun()
-        else:
-            # 인증 진행 중(code가 URL에 있음)이 아닐 때만 로그인이 필요함 메시지 표시
-            if not st.query_params.get("code"):
-                st.info("👋 로그인이 필요합니다.")
+            if st.button("🚪 로그아웃", key="logout_btn", use_container_width=True, on_click=st.logout):
+                pass # on_click에서 logout 처리됨
 
         st.divider()
         st.markdown('<div class="app-title">🎓 AI 통합 학습 도우미</div>', unsafe_allow_html=True)

@@ -279,8 +279,8 @@ def render_quiz_generator() -> None:
             st.session_state.quiz_graded = True
             
             # --- [추가] 로그인 상태일 경우 DB에 결과 저장 ---
-            if st.session_state.get("user"):
-                user_id = st.session_state.user.get("sub")
+            if st.user.is_logged_in:
+                user_id = st.user.get("sub")
                 quiz_title = st.session_state.get("quiz_current_subject", "일반 퀴즈")
                 score = sum(1 for v in st.session_state.quiz_results.values() if v)
                 total = len(questions)
