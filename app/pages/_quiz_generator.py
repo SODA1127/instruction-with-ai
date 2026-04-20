@@ -280,7 +280,7 @@ def render_quiz_generator() -> None:
             
             # --- [추가] 로그인 상태일 경우 DB에 결과 저장 ---
             if st.user.is_logged_in:
-                user_id = st.user.get("sub")
+                user_id = st.user.sub
                 quiz_title = st.session_state.get("quiz_current_subject", "일반 퀴즈")
                 score = sum(1 for v in st.session_state.quiz_results.values() if v)
                 total = len(questions)
@@ -308,7 +308,15 @@ def render_quiz_generator() -> None:
                     
                     if not is_correct:
                         if st.button(f"📌 오답노트에 담기 ({q['number']}번)", key=f"btn_mark_wrong_{idx}"):
+                             # 세션 상태 업데이트
                              w_notes = st.session_state.get("wrong_notes", [])
+                             
+                             # DB에도 즉시 개별 오답 항목 저장 (추가 기록 개념)
+                             if st.user.is_logged_in:
+                                 try:
+                                     sub_title = st.session_state.get("quiz_current_subject", "개별 오답")
+                                     db.save_quiz_result(st.user.sub, f"[수동] {sub_title}", 0, 1, [q])
+                                 except: pass
                              if q['content'] not in [wn['content'] for wn in w_notes]:
                                  # 과목 정보 추가하여 저장
                                  q_to_save = q.copy()

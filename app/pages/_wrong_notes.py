@@ -16,7 +16,7 @@ def render_wrong_notes() -> None:
     # 2. 로그인 상태일 경우 DB에서 과거 오답 가져오기
     remote_notes = []
     if st.user.is_logged_in:
-        user_id = st.user.get("sub")
+        user_id = st.user.sub
         try:
             with st.spinner("과거 기록 불러오는 중..."):
                 results = db.get_quiz_results(user_id)
