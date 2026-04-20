@@ -108,6 +108,7 @@ def render_step_solver() -> None:
             thinking, final = parse_thinking_response(result)
             st.session_state.step_solver_thinking = thinking
             st.session_state.step_solver_final = final
+            st.session_state.step_solver_result = result
         except Exception as e:
             st.error(f"❌ {e}")
 
@@ -138,7 +139,8 @@ def render_step_solver() -> None:
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="download_step_solver_md", use_container_width=True)
         with dl_col2:
-            pdf_bytes = make_pdf_bytes(result) # make_pdf_bytes performs internal parsing
+            current_result = st.session_state.get("step_solver_result", "")
+            pdf_bytes = make_pdf_bytes(current_result) # make_pdf_bytes performs internal parsing
             if pdf_bytes:
                 st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",
