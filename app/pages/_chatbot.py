@@ -22,6 +22,7 @@ from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
 from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+from src.db_manager import db
 
 def get_session_config() -> tuple[str, str, str]:
     return (
@@ -84,6 +85,15 @@ def render_chatbot() -> None:
             "role": "assistant",
             "content": clean or full_response,
         })
+
+        # --- [추가] 로그인 상태일 경우 DB에 대화 저장 ---
+        if st.session_state.get("user"):
+            user_id = st.session_state.user.get("sub")
+            # 첫 질문을 제목으로 사용
+            title = st.session_state.chat_history[0]["content"][:30] if st.session_state.chat_history else "상담 대화"
+            try:
+                db.save_conversation(user_id, title, st.session_state.chat_history)
+            except Exception: pass
 
 
 # ────────────────────────────────────────────────────────────
