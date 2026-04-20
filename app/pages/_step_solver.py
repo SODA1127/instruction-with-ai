@@ -99,11 +99,11 @@ def render_step_solver() -> None:
                     problem_text = "업로드된 PDF 문서 첫 페이지의 문제를 단계별로 풀어주세요."
 
         user_mode = st.session_state.get("user_mode", "👨‍🎓 수강생용")
-        full_user_prompt = f"[{user_mode}을 위한 풀이]\n\n{user_prompt}"
+        full_user_prompt = f"[{user_mode}을 위한 풀이]\n\n{problem_text}"
 
         try:
             with st.spinner("🤔 AI가 문제를 풀고 있습니다..."):
-                result = call_ai(system, full_user_prompt, provider, model, api_key,
+                result = call_ai(SYSTEM_PROMPTS["step_solver"], full_user_prompt, provider, model, api_key,
                                  images_b64=img_list)
             thinking, final = parse_thinking_response(result)
             st.session_state.step_solver_thinking = thinking
