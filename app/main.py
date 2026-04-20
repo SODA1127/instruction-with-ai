@@ -17,6 +17,11 @@ from app.pages import (
     render_quiz_generator, render_chatbot, render_pdf_analyzer,
     render_code_analyzer, render_feedback_form, render_wrong_notes
 )
+from src.db_manager import db
+try:
+    from st_google_auth import st_google_auth
+except ImportError:
+    st_google_auth = None
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
 
@@ -38,6 +43,47 @@ def _get_api_key_cookie_name(provider: str) -> str:
 def render_sidebar() -> str:
     """사이드바 렌더링 및 프로바이더 설정."""
     with st.sidebar:
+        # --- [추가] 로그인 및 프로필 섹션 ---
+        auth_info = None
+        if st_google_auth:
+            google_conf = st.secrets.get("google_auth")
+            if google_conf:
+                try:
+                    auth_info = st_google_auth(
+                        client_id=google_conf.get("client_id", ""),
+                        client_secret=google_conf.get("client_secret", ""),
+                        redirect_uri=google_conf.get("redirect_uri", "http://localhost:8501")
+                    )
+                except Exception as e:
+                    st.sidebar.error(f"⚠️ 인증 오류: {e}")
+
+        if auth_info:
+            st.session_state.user = auth_info
+            # DB 동기화
+            try:
+                db.upsert_profile(
+                    user_id=auth_info.get("sub"), # Google 고유 ID
+                    email=auth_info.get("email"),
+                    full_name=auth_info.get("name"),
+                    avatar_url=auth_info.get("picture")
+                )
+            except Exception: pass
+            
+            # 프로필 UI
+            cols = st.columns([1, 3])
+            with cols[0]:
+                st.image(auth_info.get("picture", ""), width=50)
+            with cols[1]:
+                st.markdown(f"**{auth_info.get('name')}**님")
+                st.caption(auth_info.get("email"))
+            if st.button("로그아웃", key="logout_btn", use_container_width=True):
+                st.session_state.clear()
+                st.rerun()
+        else:
+            st.session_state.user = None
+            st.info("💡 로그인이 필요합니다.")
+
+        st.divider()
         st.markdown('<div class="app-title">🎓 AI 통합 학습 도우미</div>', unsafe_allow_html=True)
         st.markdown('<div class="app-subtitle">교육자와 학생을 위한 멀티 AI 학습 플랫폼</div>', unsafe_allow_html=True)
         st.divider()
