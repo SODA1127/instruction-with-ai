@@ -22,6 +22,7 @@ from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
 from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+from src.db_manager import db
 
 def get_session_config() -> tuple[str, str, str]:
     return (
@@ -274,7 +275,21 @@ def render_quiz_generator() -> None:
                 # 채점 로직: 정답이 포함되어 있거나 일치하는지 확인
                 is_correct = real_ans in user_ans or user_ans in real_ans if user_ans else False
                 st.session_state.quiz_results[idx] = is_correct
+            
             st.session_state.quiz_graded = True
+            
+            # --- [추가] 로그인 상태일 경우 DB에 결과 저장 ---
+            if st.session_state.get("user"):
+                user_id = st.session_state.user.get("sub")
+                quiz_title = st.session_state.get("quiz_current_subject", "일반 퀴즈")
+                score = sum(1 for v in st.session_state.quiz_results.values() if v)
+                total = len(questions)
+                # 틀린 문제 데이터만 추출하여 저장
+                incorrect_data = [questions[idx] for idx, v in st.session_state.quiz_results.items() if not v]
+                try:
+                    db.save_quiz_result(user_id, quiz_title, score, total, incorrect_data)
+                except Exception: pass
+            
             st.rerun()
 
         if st.session_state.get("quiz_graded"):
