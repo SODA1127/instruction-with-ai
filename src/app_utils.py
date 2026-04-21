@@ -36,9 +36,10 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     questions = []
     current_q = None
     
-    # 정규식 패턴 정의
-    q_start_re = re.compile(r'^\s*(?:[^\w\s]\s*)*(?:(?:문항|질문|문제|Q)\s*(\d+)[\.번\)]?|(\d+)(?:번\s*\.?|\.|\)))\s*(.*)', re.IGNORECASE)
-    opt_start_re = re.compile(r'^\s*(?:[\-\*]\s+)?([①-⑩]|[1-5][\)\.]|(?:\([1-5]\))|[1-5](?=\s*[\(\[A-E가-힣]))\s*(.*)')
+    # 정규식 패턴 정의 - JSON 키 형식("0":)은 제외하도록 부정 형언구(negative lookahead) 추가 시도
+    # 단순한 숫자로 시작하고 뒤에 마침표, 괄호, '번'이 붙은 경우만 문항 시작으로 인정
+    q_start_re = re.compile(r'^\s*(?:[^\w\s]\s*)*(?:(?:문항|질문|문제|Q)\s*(\d+)[\.번\)]?|(\d+)(?:번\s*\.?|\.|\)))(?!\s*":)\s*(.*)', re.IGNORECASE)
+    opt_start_re = re.compile(r'^\s*(?:[\-\*]\s+)?([①-⑩]|[1-5][\)\.]|(?:\([1-5]\))|[1-5](?=\s*[\(\[A-E가-힣]))(?!\s*":)\s*(.*)')
     ans_re = re.compile(r'(?:정답|답)\s*(?:\*\*|\*)?[:：]?\s*(?:\*\*|\*)?\s*([1-5①-⑤]|[A-Ea-e]+)', re.IGNORECASE)
     
     in_answer_block = False
@@ -188,8 +189,10 @@ def parse_quiz_json(text: str) -> list[dict]:
             q["content"] = clean_text_symbols(str(q.get("content", "")))
             q["answer"] = clean_text_symbols(str(q.get("answer", "")))
             q["explanation"] = clean_text_symbols(str(q.get("explanation", "")))
-            if q.get("options"):
+            if q.get("options") and isinstance(q["options"], list):
                 q["options"] = [clean_text_symbols(str(opt)) for opt in q["options"]]
+            else:
+                q["options"] = []
             if q["answer"]:
                 q["answer"] = q["answer"].replace('①','1').replace('②','2').replace('③','3').replace('④','4').replace('⑤','5')
         return data
@@ -199,20 +202,34 @@ def parse_quiz_json(text: str) -> list[dict]:
 
 def questions_to_markdown(questions: list[dict]) -> str:
     """JSON 데이터를 사람이 읽기 좋은 예쁜 마크다운 문서로 변환합니다."""
+    if not isinstance(questions, list):
+        return str(questions)
+        
     md = ""
     for q in questions:
-        md += f"### 문항 {q.get('number', '')}\n\n"
+        if not isinstance(q, dict): continue
+        
+        num = q.get('number', '')
+        content = q.get('content', '')
+        if not content: continue
+        
+        md += f"### 문항 {num}\n\n"
         
         # 이미지 참조가 있는 경우 마크다운에 표시
         img_idx = q.get("image_index")
         if img_idx is not None:
-             md += f"*(그림/그래프 참고: 이미지 {img_idx + 1})*\n\n"
+             try:
+                 md += f"*(그림/그래프 참고: 이미지 {int(img_idx) + 1})*\n\n"
+             except: pass
              
-        md += f"{q.get('content', '')}\n\n"
-        if q.get("options"):
-            for opt in q["options"]:
+        md += f"{content}\n\n"
+        
+        options = q.get("options")
+        if options and isinstance(options, list):
+            for opt in options:
                 md += f"- {opt}\n"
             md += "\n"
+            
         md += "[ANSWER_START]\n"
         md += f"**✅ 정답:** {q.get('answer', '')}\n\n"
         md += f"**📝 해설:**\n{q.get('explanation', '')}\n"
@@ -222,7 +239,16 @@ def questions_to_markdown(questions: list[dict]) -> str:
 
 def parse_thinking_response(text: str) -> tuple[str, str]:
     def clean_output(content: str) -> str:
-        if "```json" in content or content.strip().startswith("["):
+        # JSON 형식인 경우 절대 변환을 수행하지 않음 (치명적 오류 방지)
+        # 단순히 시작/끝만 보는 게 아니라 내부 구조를 휴리스틱하게 판단
+        stripped = content.strip()
+        is_json_like = (
+            (stripped.startswith("[") and stripped.endswith("]")) or 
+            (stripped.startswith("{") and stripped.endswith("}")) or
+            "```json" in content or
+            (content.count('": "') > 2 and content.count('{') > 0)
+        )
+        if is_json_like:
             return content.strip()
             
         def repl_block(match): return match.group(0).replace("$", "")
@@ -243,10 +269,20 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
         content = re.sub(pattern, repl_details, content, flags=re.IGNORECASE)
         return re.sub(r'\n{3,}', '\n\n', content).strip()
 
+    # 생각 채널 처리
+    text = text.strip()
     m = re.search(r'<\|channel>thought\n(.*?)<channel\|>', text, re.DOTALL)
-    if m: return m.group(1).strip(), clean_output(text[m.end():].strip())
+    if m:
+        thought = m.group(1).strip()
+        body = text[m.end():].strip()
+        return thought, clean_output(body)
+        
     m = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
-    if m: return m.group(1).strip(), clean_output(re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip())
+    if m:
+        thought = m.group(1).strip()
+        body = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        return thought, clean_output(body)
+        
     return "", clean_output(text)
 
 def generate_pdf_bytes(markdown_text: str) -> bytes | None:
