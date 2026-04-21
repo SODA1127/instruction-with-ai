@@ -220,7 +220,7 @@ def render_quiz_generator() -> None:
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="dl_quiz", use_container_width=True)
         with dl_col2:
-            pdf_bytes = app_utils.make_pdf_bytes(st.session_state.quiz_gen_final)
+            pdf_bytes = app_utils.generate_pdf_bytes(st.session_state.quiz_gen_final)
             if pdf_bytes:
                 st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",
@@ -331,7 +331,7 @@ def render_quiz_generator() -> None:
                 st.download_button("💾 전체 결과 (.md)", data=q_md.encode("utf-8-sig"),
                                    file_name=f"quiz_result_{quiz_title}.md", mime="text/markdown", key="dl_quiz_all_md")
             with d_col2:
-                p_bytes = app_utils.make_pdf_bytes(q_md)
+                p_bytes = app_utils.generate_pdf_bytes(q_md)
                 if p_bytes:
                     st.download_button("💾 전체 결과 (.pdf)", data=p_bytes,
                                        file_name=f"quiz_result_{quiz_title}.pdf", mime="application/pdf", key="dl_quiz_all_pdf")
@@ -372,7 +372,7 @@ def render_quiz_generator() -> None:
                                  st.download_button("💾 이 문항 저장 (.md)", data=q_single_md.encode("utf-8-sig"),
                                                     file_name=f"question_{q['number']}.md", mime="text/markdown", key=f"dl_q_md_{idx}")
                              with s_col2:
-                                 sp_bytes = app_utils.make_pdf_bytes(q_single_md)
+                                 sp_bytes = app_utils.generate_pdf_bytes(q_single_md)
                                  if sp_bytes:
                                      st.download_button("💾 이 문항 저장 (.pdf)", data=sp_bytes,
                                                         file_name=f"question_{q['number']}.pdf", mime="application/pdf", key=f"dl_q_pdf_{idx}")

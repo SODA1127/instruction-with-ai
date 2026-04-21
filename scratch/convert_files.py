@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 try:
-    from src.app_utils import make_pdf_bytes
+    from src.app_utils import generate_pdf_bytes
 except ImportError as e:
     print(f"Import Error: {e}")
     sys.exit(1)
@@ -25,7 +25,7 @@ for md_path in files_to_convert:
         with open(md_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        pdf_bytes = make_pdf_bytes(content)
+        pdf_bytes = generate_pdf_bytes(content)
         
         pdf_path = md_path.rsplit('.', 1)[0] + '.pdf'
         with open(pdf_path, 'wb') as f:

@@ -249,7 +249,7 @@ def parse_thinking_response(text: str) -> tuple[str, str]:
     if m: return m.group(1).strip(), clean_output(re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip())
     return "", clean_output(text)
 
-def make_pdf_bytes(markdown_text: str) -> bytes | None:
+def generate_pdf_bytes(markdown_text: str) -> bytes | None:
     """마크다운 텍스트를 PDF 바이트로 변환합니다. 한글 폰트 및 줄바꿈을 지원합니다."""
     try:
         from reportlab.pdfgen import canvas

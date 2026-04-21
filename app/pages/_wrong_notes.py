@@ -3,7 +3,7 @@ import streamlit as st
 import os
 from src.config import SUBJECT_LIST
 from src.db_manager import db
-from src.app_utils import make_pdf_bytes, safe_filename
+from src.app_utils import generate_pdf_bytes, safe_filename
 
 def render_wrong_notes() -> None:
     """📚 기능: 나의 오답노트 모아보기 (과목별 관리)"""
@@ -82,7 +82,7 @@ def render_wrong_notes() -> None:
                 use_container_width=True
             )
         with dl_col2:
-            pdf_bytes = make_pdf_bytes(all_md)
+            pdf_bytes = generate_pdf_bytes(all_md)
             if pdf_bytes:
                 st.download_button(
                     "💾 PDF 내보내기",

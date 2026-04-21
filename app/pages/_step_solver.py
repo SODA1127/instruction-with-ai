@@ -149,7 +149,7 @@ def render_step_solver() -> None:
                                key="download_step_solver_md", use_container_width=True)
         with dl_col2:
             current_result = st.session_state.get("step_solver_result", "")
-            pdf_bytes = app_utils.make_pdf_bytes(current_result) # make_pdf_bytes performs internal parsing
+            pdf_bytes = app_utils.generate_pdf_bytes(current_result) # generate_pdf_bytes performs internal parsing
             if pdf_bytes:
                 st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",

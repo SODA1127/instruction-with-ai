@@ -277,7 +277,7 @@ def _render_question_solver_ui(
                                        file_name=f"{q_filename}.md", mime="text/markdown",
                                        key=f"dl_sol_{i}", use_container_width=True)
                 with dl_col2:
-                    pdf_bytes = app_utils.make_pdf_bytes(solutions[i])
+                    pdf_bytes = app_utils.generate_pdf_bytes(solutions[i])
                     if pdf_bytes:
                         st.download_button("💾 PDF 저장", data=pdf_bytes,
                                            file_name=f"{q_filename}.pdf", mime="application/pdf",
@@ -303,7 +303,7 @@ def _render_question_solver_ui(
                                file_name=f"{all_filename}.md", mime="text/markdown",
                                key="dl_all_solutions", use_container_width=True)
         with col2:
-            pdf_bytes = app_utils.make_pdf_bytes(all_sols)
+            pdf_bytes = app_utils.generate_pdf_bytes(all_sols)
             if pdf_bytes:
                 st.download_button("💾 전체 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{all_filename}.pdf", mime="application/pdf",
@@ -519,7 +519,7 @@ def _render_pdf_general_result() -> None:
                            file_name=f"analysis_{suffix}.md", mime="text/markdown",
                            key="dl_pdf_md_gen", use_container_width=True)
     with col_b:
-        pdf_bytes = app_utils.make_pdf_bytes(result)
+        pdf_bytes = app_utils.generate_pdf_bytes(result)
         if pdf_bytes:
             st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
                                file_name=f"analysis_{suffix}.pdf", mime="application/pdf",

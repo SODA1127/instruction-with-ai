@@ -4,7 +4,7 @@ from .common import get_session_config
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.app_utils import make_pdf_bytes, parse_thinking_response, safe_filename
+from src.app_utils import generate_pdf_bytes, parse_thinking_response, safe_filename
 
 def render_code_analyzer() -> None:
     """💻 기능 6: 프로그래밍 코드 분석기"""
@@ -64,7 +64,7 @@ def render_code_analyzer() -> None:
                                    file_name=f"{base_name}.md", mime="text/markdown",
                                    key="dl_code_md", use_container_width=True)
             with dl_col2:
-                pdf_bytes = make_pdf_bytes(st.session_state.code_analyzer_result)
+                pdf_bytes = generate_pdf_bytes(st.session_state.code_analyzer_result)
                 if pdf_bytes:
                     st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
                                        file_name=f"{base_name}.pdf", mime="application/pdf",
