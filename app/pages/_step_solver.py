@@ -21,7 +21,8 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION, PROGRAMMING_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+from src.app_utils import encode_image_to_base64, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+import src.app_utils as app_utils
 
 def get_session_config() -> tuple[str, str, str]:
     return (
@@ -148,7 +149,7 @@ def render_step_solver() -> None:
                                key="download_step_solver_md", use_container_width=True)
         with dl_col2:
             current_result = st.session_state.get("step_solver_result", "")
-            pdf_bytes = make_pdf_bytes(current_result) # make_pdf_bytes performs internal parsing
+            pdf_bytes = app_utils.make_pdf_bytes(current_result) # make_pdf_bytes performs internal parsing
             if pdf_bytes:
                 st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",
