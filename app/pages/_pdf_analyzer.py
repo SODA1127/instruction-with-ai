@@ -246,11 +246,11 @@ def _render_question_solver_ui(
                 f'<span style="background:#4f46e5;color:white;border-radius:6px;'
                 f'padding:2px 10px;font-weight:700;font-size:0.85rem;white-space:nowrap;">'
                 f'{q["number"]}번</span>'
-                f'<span style="color:#e2e8f0;font-size:0.95rem;">{q["content"][:200]}'
-                f'{"..." if len(q["content"]) > 200 else ""}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+            # 수식 렌더링을 위해 텍스트는 별도의 markdown으로 출력 (HTML 내부가 아님)
+            st.markdown(q["content"])
         with btn_col:
             btn_label = "✅ 재풀이" if solved else "📖 풀이"
             if st.button(btn_label, key=f"solve_q_{i}", use_container_width=True):
@@ -333,7 +333,15 @@ def _solve_single_question(
     user_prompt = f"[문서: {filename}]\n\n**문제 {q['number']}번**\n{q['content']}\n\n"
     if context:
         user_prompt += f"[문서 내 관련 컨텍스트]\n{context}\n\n"
-    user_prompt += f"이 문제를 [{mode}]의 요구사항에 맞춰 단계별로 자세히 풀어주세요."
+    
+    # 사용자 요구사항: 수학/프로그래밍 특성 유지
+    instruction_addon = ""
+    if "수학" in q.get('content', '') or "함수" in q.get('content', ''):
+        instruction_addon = "\n* 주의: 수학 문제이므로 불필요한 프로그래밍 코드나 IT 개념과 연관 짓지 말고 순수하게 수학적으로 접근하세요."
+    elif "코드" in q.get('content', '') or "프로그래밍" in q.get('content', ''):
+        instruction_addon = f"\n* 주의: 프로그래밍 관련 내용이므로 {PROGRAMMING_INSTRUCTION}"
+
+    user_prompt += f"이 문제를 [{mode}]의 요구사항에 맞춰 단계별로 자세히 풀어주세요.{instruction_addon}"
 
     return call_ai(system, user_prompt, provider, model, api_key,
                    images_b64=images_b64 if not context else None)
@@ -375,11 +383,13 @@ def _run_pdf_analysis(
                 "당신은 시험지 분석 전문가입니다.\n"
                 "제공된 문서에서 모든 시험/연습 문제를 찾아 정확히 반환하세요.\n"
                 "반드시 아래 JSON 배열 형식만 출력하세요. 다른 텍스트는 금지입니다:\n"
-                '[{"번호":"1","내용":"문제 전체 텍스트"},{"번호":"2","내용":"..."}]'
+                '[{"번호":"1","내용":"문제 전체 텍스트"},{"번호":"2","내용":"..."}]\n\n'
+                f"{MATH_INSTRUCTION}"
             )
             q_prompt = (
                 "첨부된 문서(파일 또는 이미지)에서 기재된 모든 시험 문항이나 연습 문제를 찾아 "
                 "JSON 배열 형식으로만 반환하세요. JSON 외의 부가적인 인사말이나 마크다운 설명은 일절 생략하세요.\n"
+                "특히 수식이나 기호가 포함된 경우 반드시 $ 또는 $$ 기호로 감싸서 마크다운 수식법을 준수하세요.\n"
                 "문제가 없다면 빈 배열 []을 반환하세요.\n\n"
             )
             if content_text:

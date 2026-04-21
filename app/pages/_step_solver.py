@@ -19,7 +19,7 @@ except ImportError:
     _FITZ_OK = False
 
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
-from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
+from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION, PROGRAMMING_INSTRUCTION
 from src.models import call_ai, stream_ai
 from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 
@@ -99,7 +99,15 @@ def render_step_solver() -> None:
                     problem_text = "업로드된 PDF 문서 첫 페이지의 문제를 단계별로 풀어주세요."
 
         user_mode = st.session_state.get("user_mode", "👨‍🎓 수강생용")
-        full_user_prompt = f"[{user_mode}을 위한 풀이]\n\n{problem_text}"
+        
+        # 과목 특성별 지침 추가
+        instruction_addon = ""
+        if subject == "수학" or "수학" in problem_text:
+            instruction_addon = "\n* 주의: 수학 문제이므로 불필요한 프로그래밍 개념과 연관 짓지 말고 수학적 원리에 집중하세요."
+        elif subject == "기타" and ("코드" in problem_text or "프로그래밍" in problem_text):
+            instruction_addon = f"\n* 주의: {PROGRAMMING_INSTRUCTION}"
+
+        full_user_prompt = f"[{user_mode}을 위한 {subject} 풀이]\n\n{problem_text}\n\n{instruction_addon}"
 
         try:
             with st.spinner("🤔 AI가 문제를 풀고 있습니다..."):
