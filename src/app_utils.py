@@ -202,6 +202,12 @@ def questions_to_markdown(questions: list[dict]) -> str:
     md = ""
     for q in questions:
         md += f"### 문항 {q.get('number', '')}\n\n"
+        
+        # 이미지 참조가 있는 경우 마크다운에 표시
+        img_idx = q.get("image_index")
+        if img_idx is not None:
+             md += f"*(그림/그래프 참고: 이미지 {img_idx + 1})*\n\n"
+             
         md += f"{q.get('content', '')}\n\n"
         if q.get("options"):
             for opt in q["options"]:
@@ -252,6 +258,9 @@ def make_pdf_bytes(markdown_text: str) -> bytes | None:
         from reportlab.pdfbase.ttfonts import TTFont
         from reportlab.lib.utils import simpleSplit
         
+        # [중요] 사고 과정(Thinking) 제거 후 본문만 추출
+        _, clean_md = parse_thinking_response(markdown_text)
+        
         font_paths = [
             ("/System/Library/Fonts/Supplemental/AppleGothic.ttf", None),
             ("/System/Library/Fonts/AppleSDGothicNeo.ttc", 0),
@@ -277,7 +286,7 @@ def make_pdf_bytes(markdown_text: str) -> bytes | None:
         margin = 50
         max_width = width - (margin * 2)
         
-        text_content = re.sub(r'<[^>]+>', '', markdown_text)
+        text_content = re.sub(r'<[^>]+>', '', clean_md)
         text_content = text_content.replace('[ANSWER_START]', '\n--- [정답 및 해설 시작] ---\n')
         text_content = text_content.replace('[ANSWER_END]', '\n--- [정답 및 해설 끝] ---\n')
         
