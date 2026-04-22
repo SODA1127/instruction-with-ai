@@ -21,7 +21,7 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, generate_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 from src.db_manager import db
 
 def get_session_config() -> tuple[str, str, str]:
@@ -368,7 +368,7 @@ def _render_question_solver_ui(
                         use_container_width=True,
                     )
                 with dl_col2:
-                    pdf_bytes = generate_pdf_bytes(solutions[i])
+                    pdf_bytes = make_pdf_bytes(solutions[i])
                     if pdf_bytes:
                         st.download_button(
                             "💾 PDF 저장",
@@ -404,7 +404,7 @@ def _render_question_solver_ui(
                 use_container_width=True,
             )
         with col2:
-            pdf_bytes = generate_pdf_bytes(all_sols)
+            pdf_bytes = make_pdf_bytes(all_sols)
             if pdf_bytes:
                 st.download_button(
                     "💾 전체 풀이 저장 (.pdf)",

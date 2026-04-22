@@ -5,7 +5,7 @@ from .common import get_session_config, get_max_pdf_pages, _PYPDF_OK
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.app_utils import generate_pdf_bytes, parse_thinking_response, _pdf_extract_content, safe_filename
+from src.app_utils import make_pdf_bytes, parse_thinking_response, _pdf_extract_content, safe_filename
 
 if _PYPDF_OK:
     import pypdf
@@ -108,7 +108,7 @@ def render_lesson_plan() -> None:
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="dl_plan_md", use_container_width=True)
         with dl_col2:
-            pdf_bytes = generate_pdf_bytes(st.session_state.lesson_plan_result)
+            pdf_bytes = make_pdf_bytes(st.session_state.lesson_plan_result)
             if pdf_bytes:
                 st.download_button("💾 PDF 저장", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",

@@ -19,9 +19,8 @@ except ImportError:
     _FITZ_OK = False
 
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
-from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION, PROGRAMMING_INSTRUCTION
+from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 import src.app_utils as app_utils
 
 def get_session_config() -> tuple[str, str, str]:
@@ -100,21 +99,13 @@ def render_step_solver() -> None:
                     problem_text = "업로드된 PDF 문서 첫 페이지의 문제를 단계별로 풀어주세요."
 
         user_mode = st.session_state.get("user_mode", "👨‍🎓 수강생용")
-        
-        # 과목 특성별 지침 추가
-        instruction_addon = ""
-        if subject == "수학" or "수학" in problem_text:
-            instruction_addon = "\n* 주의: 수학 문제이므로 불필요한 프로그래밍 개념과 연관 짓지 말고 수학적 원리에 집중하세요."
-        elif subject == "기타" and ("코드" in problem_text or "프로그래밍" in problem_text):
-            instruction_addon = f"\n* 주의: {PROGRAMMING_INSTRUCTION}"
-
-        full_user_prompt = f"[{user_mode}을 위한 {subject} 풀이]\n\n{problem_text}\n\n{instruction_addon}"
+        full_user_prompt = f"[{user_mode}을 위한 풀이]\n\n{problem_text}"
 
         try:
             with st.spinner("🤔 AI가 문제를 풀고 있습니다..."):
                 result = call_ai(SYSTEM_PROMPTS["step_solver"], full_user_prompt, provider, model, api_key,
                                  images_b64=img_list)
-            thinking, final = parse_thinking_response(result)
+            thinking, final = app_utils.parse_thinking_response(result)
             st.session_state.step_solver_thinking = thinking
             st.session_state.step_solver_final = final
             st.session_state.step_solver_result = result
@@ -140,7 +131,7 @@ def render_step_solver() -> None:
             base_name = os.path.splitext(st.session_state.solver_img_upload.name)[0]
         elif st.session_state.get("solver_pdf_upload"):
             base_name = os.path.splitext(st.session_state.solver_pdf_upload.name)[0]
-        base_name = safe_filename(base_name)
+        base_name = app_utils.safe_filename(base_name)
 
         dl_col1, dl_col2 = st.columns([1, 1])
         with dl_col1:
@@ -149,7 +140,7 @@ def render_step_solver() -> None:
                                key="download_step_solver_md", use_container_width=True)
         with dl_col2:
             current_result = st.session_state.get("step_solver_result", "")
-            pdf_bytes = app_utils.generate_pdf_bytes(current_result) # generate_pdf_bytes performs internal parsing
+            pdf_bytes = app_utils.make_pdf_bytes(st.session_state.step_solver_result) # make_pdf_bytes performs internal parsing
             if pdf_bytes:
                 st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",

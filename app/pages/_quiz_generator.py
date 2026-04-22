@@ -21,7 +21,6 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES, SUBJECT_LIST
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 import src.app_utils as app_utils
 from src.db_manager import db
 
@@ -105,11 +104,11 @@ def render_quiz_generator() -> None:
                             page_count = len(reader.pages)
                         except Exception: pass
                     
-                    text, images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
-                    if text.strip():
-                        content_text += f"\n\n[파일: {up.name}]\n{text}"
-                    if images:
-                        img_list.extend(images)
+                    _text, _imgs, _method = app_utils._pdf_extract_content(file_bytes, page_count, "")
+                    if _text.strip():
+                        content_text += f"\n\n[파일: {up.name}]\n{_text}"
+                    if _imgs:
+                        img_list.extend(_imgs)
                 
             if not content_text.strip() and not img_list:
                 st.warning("⚠️ 자료에서 내용을 추출할 수 없습니다.")
@@ -152,22 +151,19 @@ def render_quiz_generator() -> None:
                 result = call_ai(system, full_prompt, provider, model, api_key,
                                  images_b64=img_list if img_list else None)
             
-            st.session_state.quiz_source_images = img_list # 이미지 리스트 보전 (인덱스용)
             st.session_state.quiz_current_subject = quiz_subject # 현재 과목 저장
-            
-            from src.app_utils import parse_quiz_json, questions_to_markdown
             
             # 원시 응답 저장
             st.session_state.quiz_raw_response = result
-            thinking, final_raw = parse_thinking_response(result)
+            thinking, final_raw = app_utils.parse_thinking_response(result)
             
             # 1. JSON 파싱 시도
-            quiz_list = parse_quiz_json(final_raw)
+            quiz_list = app_utils.parse_quiz_json(final_raw)
             st.session_state.quiz_list = quiz_list 
             st.session_state.quiz_gen_thinking = thinking
             
             # 2. 화면 표시용 마크다운 생성
-            final_md = questions_to_markdown(quiz_list)
+            final_md = app_utils.questions_to_markdown(quiz_list)
             st.session_state.quiz_gen_final = final_md
             
             # JSON 파싱 실패 시 경고 표시
@@ -212,7 +208,7 @@ def render_quiz_generator() -> None:
         elif st.session_state.get("quiz_img_upload"):
              first_up = st.session_state.quiz_img_upload[0] if isinstance(st.session_state.quiz_img_upload, list) else st.session_state.quiz_img_upload
              base_name = os.path.splitext(first_up.name)[0]
-        base_name = safe_filename(base_name)
+        base_name = app_utils.safe_filename(base_name)
             
         dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 1])
         with dl_col1:
@@ -220,11 +216,32 @@ def render_quiz_generator() -> None:
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="dl_quiz", use_container_width=True)
         with dl_col2:
-            pdf_bytes = app_utils.generate_pdf_bytes(st.session_state.quiz_gen_final)
-            if pdf_bytes:
-                st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
-                                   file_name=f"{base_name}.pdf", mime="application/pdf",
-                                   key="dl_quiz_pdf", use_container_width=True)
+            try:
+                # 퀴즈 데이터가 있는지 확인
+                if not st.session_state.get("quiz_gen_final"):
+                    st.warning("⚠️ PDF 처리할 데이터가 없습니다.")
+                else:
+                    # 세션 캐싱: 이미 생성된 PDF가 있다면 그것을 사용
+                    # 만약 퀴즈 내용이 바뀌었다면 (quiz_gen_final이 다름) 새로 생성
+                    cache_key = f"pdf_cache_{hash(st.session_state.quiz_gen_final)}"
+                    
+                    if st.session_state.get("last_pdf_key") != cache_key:
+                        with st.spinner("📄 PDF 파일 준비 중..."):
+                            pdf_bytes = app_utils.make_pdf_bytes(st.session_state.quiz_gen_final)
+                            st.session_state.cached_pdf_bytes = pdf_bytes
+                            st.session_state.last_pdf_key = cache_key
+                    
+                    pdf_bytes = st.session_state.get("cached_pdf_bytes")
+                    
+                    if pdf_bytes:
+                        st.download_button("💾 문항 저장 (.pdf)", data=pdf_bytes,
+                                           file_name=f"{base_name}.pdf", mime="application/pdf",
+                                           key="dl_quiz_pdf", use_container_width=True)
+                    else:
+                        st.error("❌ PDF 엔진 초기화 실패")
+                        st.info("💡 터미널 로그를 확인하거나 페이지를 새로고침해 보세요.")
+            except Exception as e:
+                st.error(f"❌ PDF 오류: {str(e)}")
         with dl_col3:
             if st.button("📝 퀴즈 직접 풀어보기", key="btn_solve_interactive", use_container_width=True):
                 if st.session_state.get("quiz_list"):
@@ -244,22 +261,7 @@ def render_quiz_generator() -> None:
         questions = st.session_state.quiz_solved_data
         
         for idx, q in enumerate(questions):
-            # 문제 번호와 내용을 분리하여 렌더링 (코드 블록 깨짐 방지)
-            st.markdown(f"#### **Q{q.get('number', idx+1)}.**")
-            
-            # 이미지/그래프 표시 (image_index가 있고 원본 이미지가 있을 경우)
-            img_idx = q.get("image_index")
-            source_images = st.session_state.get("quiz_source_images", [])
-            if img_idx is not None and isinstance(img_idx, int) and img_idx < len(source_images):
-                try:
-                    with st.container():
-                        st.markdown('<div style="background-color:white; padding:10px; border-radius:10px; border:1px solid #ddd; margin-bottom:15px;">', unsafe_allow_html=True)
-                        st.image(f"data:image/png;base64,{source_images[img_idx]}", caption="[참고 이미지]", use_container_width=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-                except:
-                    pass
-
-            st.markdown(q.get('content', ''))
+            st.markdown(f"#### **Q{q.get('number', idx+1)}. {q.get('content', '')}**")
             
             # multiple_choice이거나 options가 있는 경우 라디오 버튼 표시
             if q.get('type') == 'multiple_choice' or q.get('options'):
@@ -313,30 +315,6 @@ def render_quiz_generator() -> None:
             correct_count = sum(1 for v in st.session_state.quiz_results.values() if v)
             st.success(f"🎊 채점 완료! {len(questions)}문제 중 {correct_count}문제를 맞혔습니다.")
             
-            # --- [추가] 퀴즈 전체 결과 다운로드 ---
-            quiz_title = st.session_state.get("quiz_current_subject", "퀴즈 결과")
-            q_md = f"# 📝 {quiz_title} 결과 리스트\n\n"
-            q_md += f"**총점: {correct_count} / {len(questions)}**\n\n---\n\n"
-            for idx, q in enumerate(questions):
-                is_correct = st.session_state.quiz_results.get(idx)
-                q_md += f"### {idx+1}. {q['content']} ({'✅ 정답' if is_correct else '❌ 오답'})\n"
-                if q.get('options'):
-                    for opt in q['options']: q_md += f"- {opt}\n"
-                q_md += f"\n**정답:** {q['answer']}\n"
-                if q.get('explanation'): q_md += f"**해설:** {q['explanation']}\n"
-                q_md += "\n---\n\n"
-
-            d_col1, d_col2 = st.columns(2)
-            with d_col1:
-                st.download_button("💾 전체 결과 (.md)", data=q_md.encode("utf-8-sig"),
-                                   file_name=f"quiz_result_{quiz_title}.md", mime="text/markdown", key="dl_quiz_all_md")
-            with d_col2:
-                p_bytes = app_utils.generate_pdf_bytes(q_md)
-                if p_bytes:
-                    st.download_button("💾 전체 결과 (.pdf)", data=p_bytes,
-                                       file_name=f"quiz_result_{quiz_title}.pdf", mime="application/pdf", key="dl_quiz_all_pdf")
-            st.divider()
-            
             for idx, q in enumerate(questions):
                 is_correct = st.session_state.quiz_results.get(idx)
                 color = "✅ 정답" if is_correct else "❌ 오답"
@@ -358,25 +336,6 @@ def render_quiz_generator() -> None:
                                      sub_title = st.session_state.get("quiz_current_subject", "개별 오답")
                                      db.save_quiz_result(st.user.sub, f"[수동] {sub_title}", 0, 1, [q])
                                  except: pass
-                             
-                             # 개별 문항 다운로드 버튼 추가
-                             q_single_md = f"# 📝 퀴즈 문항 저너\n\n### {q['content']}\n"
-                             if q.get('options'):
-                                 for opt in q['options']: q_single_md += f"- {opt}\n"
-                             q_single_md += f"\n**정답:** {q['answer']}\n"
-                             if q.get('explanation'): q_single_md += f"**해설:** {q['explanation']}\n"
-                             
-                             st.write("---")
-                             s_col1, s_col2 = st.columns(2)
-                             with s_col1:
-                                 st.download_button("💾 이 문항 저장 (.md)", data=q_single_md.encode("utf-8-sig"),
-                                                    file_name=f"question_{q['number']}.md", mime="text/markdown", key=f"dl_q_md_{idx}")
-                             with s_col2:
-                                 sp_bytes = app_utils.generate_pdf_bytes(q_single_md)
-                                 if sp_bytes:
-                                     st.download_button("💾 이 문항 저장 (.pdf)", data=sp_bytes,
-                                                        file_name=f"question_{q['number']}.pdf", mime="application/pdf", key=f"dl_q_pdf_{idx}")
-                             
                              if q['content'] not in [wn['content'] for wn in w_notes]:
                                  # 과목 정보 추가하여 저장
                                  q_to_save = q.copy()

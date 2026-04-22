@@ -21,7 +21,6 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 import src.app_utils as app_utils
 
 def get_session_config() -> tuple[str, str, str]:
@@ -247,11 +246,11 @@ def _render_question_solver_ui(
                 f'<span style="background:#4f46e5;color:white;border-radius:6px;'
                 f'padding:2px 10px;font-weight:700;font-size:0.85rem;white-space:nowrap;">'
                 f'{q["number"]}번</span>'
+                f'<span style="color:#e2e8f0;font-size:0.95rem;">{q["content"][:200]}'
+                f'{"..." if len(q["content"]) > 200 else ""}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            # 수식 렌더링을 위해 텍스트는 별도의 markdown으로 출력 (HTML 내부가 아님)
-            st.markdown(q["content"])
         with btn_col:
             btn_label = "✅ 재풀이" if solved else "📖 풀이"
             if st.button(btn_label, key=f"solve_q_{i}", use_container_width=True):
@@ -268,16 +267,16 @@ def _render_question_solver_ui(
                 
                 orig_name = st.session_state.get("pdf_filename", "pdf")
                 base_name = os.path.splitext(orig_name)[0]
-                q_filename = safe_filename(f"{i+1}_{base_name}_Q{i+1}")
+                q_filename = app_utils.safe_filename(f"{i+1}_{base_name}_Q{i+1}")
 
                 dl_col1, dl_col2 = st.columns([1, 1])
                 with dl_col1:
-                    _, final_sol = parse_thinking_response(solutions[i])
+                    _, final_sol = app_utils.parse_thinking_response(solutions[i])
                     st.download_button("💾 MD 저장", data=final_sol.encode('utf-8-sig'),
                                        file_name=f"{q_filename}.md", mime="text/markdown",
                                        key=f"dl_sol_{i}", use_container_width=True)
                 with dl_col2:
-                    pdf_bytes = app_utils.generate_pdf_bytes(solutions[i])
+                    pdf_bytes = app_utils.make_pdf_bytes(solutions[i])
                     if pdf_bytes:
                         st.download_button("💾 PDF 저장", data=pdf_bytes,
                                            file_name=f"{q_filename}.pdf", mime="application/pdf",
@@ -293,17 +292,17 @@ def _render_question_solver_ui(
         )
         orig_name = st.session_state.get("pdf_filename", "pdf")
         base_name = os.path.splitext(orig_name)[0]
-        all_filename = safe_filename(f"{base_name}_전체풀이")
+        all_filename = app_utils.safe_filename(f"{base_name}_전체풀이")
 
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            _, final_all = parse_thinking_response(all_sols)
+            _, final_all = app_utils.parse_thinking_response(all_sols)
             st.download_button("💾 전체 풀이 저장 (.md)", data=final_all.encode('utf-8-sig'),
                                file_name=f"{all_filename}.md", mime="text/markdown",
                                key="dl_all_solutions", use_container_width=True)
         with col2:
-            pdf_bytes = app_utils.generate_pdf_bytes(all_sols)
+            pdf_bytes = app_utils.make_pdf_bytes(all_sols)
             if pdf_bytes:
                 st.download_button("💾 전체 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{all_filename}.pdf", mime="application/pdf",
@@ -334,15 +333,7 @@ def _solve_single_question(
     user_prompt = f"[문서: {filename}]\n\n**문제 {q['number']}번**\n{q['content']}\n\n"
     if context:
         user_prompt += f"[문서 내 관련 컨텍스트]\n{context}\n\n"
-    
-    # 사용자 요구사항: 수학/프로그래밍 특성 유지
-    instruction_addon = ""
-    if "수학" in q.get('content', '') or "함수" in q.get('content', ''):
-        instruction_addon = "\n* 주의: 수학 문제이므로 불필요한 프로그래밍 코드나 IT 개념과 연관 짓지 말고 순수하게 수학적으로 접근하세요."
-    elif "코드" in q.get('content', '') or "프로그래밍" in q.get('content', ''):
-        instruction_addon = f"\n* 주의: 프로그래밍 관련 내용이므로 {PROGRAMMING_INSTRUCTION}"
-
-    user_prompt += f"이 문제를 [{mode}]의 요구사항에 맞춰 단계별로 자세히 풀어주세요.{instruction_addon}"
+    user_prompt += f"이 문제를 [{mode}]의 요구사항에 맞춰 단계별로 자세히 풀어주세요."
 
     return call_ai(system, user_prompt, provider, model, api_key,
                    images_b64=images_b64 if not context else None)
@@ -384,13 +375,11 @@ def _run_pdf_analysis(
                 "당신은 시험지 분석 전문가입니다.\n"
                 "제공된 문서에서 모든 시험/연습 문제를 찾아 정확히 반환하세요.\n"
                 "반드시 아래 JSON 배열 형식만 출력하세요. 다른 텍스트는 금지입니다:\n"
-                '[{"번호":"1","내용":"문제 전체 텍스트"},{"번호":"2","내용":"..."}]\n\n'
-                f"{MATH_INSTRUCTION}"
+                '[{"번호":"1","내용":"문제 전체 텍스트"},{"번호":"2","내용":"..."}]'
             )
             q_prompt = (
                 "첨부된 문서(파일 또는 이미지)에서 기재된 모든 시험 문항이나 연습 문제를 찾아 "
                 "JSON 배열 형식으로만 반환하세요. JSON 외의 부가적인 인사말이나 마크다운 설명은 일절 생략하세요.\n"
-                "특히 수식이나 기호가 포함된 경우 반드시 $ 또는 $$ 기호로 감싸서 마크다운 수식법을 준수하세요.\n"
                 "문제가 없다면 빈 배열 []을 반환하세요.\n\n"
             )
             if content_text:
@@ -409,12 +398,12 @@ def _run_pdf_analysis(
                         st.write(f"🔍 이미지에서 문제 목록 추출 중... ({i+1}~{min(i+chunk_size, len(images_list))}장)")
                         raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=chunk)
                         debug_raw_responses.append(raw_qs)
-                        _, clean_qs = parse_thinking_response(raw_qs)
+                        _, clean_qs = app_utils.parse_thinking_response(raw_qs)
                         questions.extend(_parse_question_list(clean_qs or raw_qs))
                 else:
                     raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=None)
                     debug_raw_responses.append(raw_qs)
-                    _, clean_qs = parse_thinking_response(raw_qs)
+                    _, clean_qs = app_utils.parse_thinking_response(raw_qs)
                     questions = _parse_question_list(clean_qs or raw_qs)
             except Exception as e:
                 st.error(f"❌ 문제 추출 실패: {e}")
@@ -508,18 +497,18 @@ def _render_pdf_general_result() -> None:
     st.subheader(f"📋 {type_label} 결과 ({mode})")
     
     # 생각 과정 제거 후 본문만 렌더링
-    _, final_content = parse_thinking_response(result)
+    _, final_content = app_utils.parse_thinking_response(result)
     st.markdown(final_content, unsafe_allow_html=True)
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        _, final_md = parse_thinking_response(result)
+        thinking, final_md = app_utils.parse_thinking_response(result)
         suffix = "educator" if "교육자" in mode else "student"
         st.download_button("💾 결과 저장 (.md)", data=final_md.encode('utf-8-sig'),
                            file_name=f"analysis_{suffix}.md", mime="text/markdown",
                            key="dl_pdf_md_gen", use_container_width=True)
     with col_b:
-        pdf_bytes = app_utils.generate_pdf_bytes(result)
+        pdf_bytes = app_utils.make_pdf_bytes(result)
         if pdf_bytes:
             st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
                                file_name=f"analysis_{suffix}.pdf", mime="application/pdf",

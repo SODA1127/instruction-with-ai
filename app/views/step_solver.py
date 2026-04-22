@@ -5,7 +5,7 @@ from .common import get_session_config, get_max_pdf_pages, _PYPDF_OK
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.app_utils import encode_image_to_base64, generate_pdf_bytes, parse_thinking_response, _pdf_extract_content, safe_filename
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, safe_filename
 
 if _PYPDF_OK:
     import pypdf
@@ -116,7 +116,7 @@ def render_step_solver() -> None:
                                key="download_step_solver_md", use_container_width=True)
         with dl_col2:
             full_res = st.session_state.get("step_solver_full_result", final)
-            pdf_bytes = generate_pdf_bytes(full_res)
+            pdf_bytes = make_pdf_bytes(full_res)
             if pdf_bytes:
                 st.download_button("💾 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",

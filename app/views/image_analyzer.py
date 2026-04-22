@@ -4,7 +4,7 @@ from .common import get_session_config
 from src.config import P
 from src.prompts.system_prompts import get_system_prompt
 from src.models import call_ai
-from src.app_utils import encode_image_to_base64, generate_pdf_bytes, safe_filename
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, safe_filename
 
 def render_image_analyzer() -> None:
     """📸 기능 1: 이미지 기반 문제 분석기"""
@@ -62,7 +62,7 @@ def render_image_analyzer() -> None:
                                    file_name=f"{base_name}.md", mime="text/markdown",
                                    key="download_img_result_md", use_container_width=True)
             with dl_col2:
-                pdf_bytes = generate_pdf_bytes(st.session_state.img_analyzer_result)
+                pdf_bytes = make_pdf_bytes(st.session_state.img_analyzer_result)
                 if pdf_bytes:
                     st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
                                        file_name=f"{base_name}.pdf", mime="application/pdf",

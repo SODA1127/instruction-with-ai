@@ -21,7 +21,7 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, generate_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
 
 def get_session_config() -> tuple[str, str, str]:
     return (
@@ -94,7 +94,7 @@ def render_code_analyzer() -> None:
                                    file_name=f"{base_name}_analysis.md", mime="text/markdown",
                                    key="dl_code_md", use_container_width=True)
             with dl_col2:
-                pdf_bytes = generate_pdf_bytes(st.session_state.code_analyzer_result)
+                pdf_bytes = make_pdf_bytes(st.session_state.code_analyzer_result)
                 if pdf_bytes:
                     st.download_button("💾 분석 결과 저장 (.pdf)", data=pdf_bytes,
                                        file_name=f"{base_name}_analysis.pdf", mime="application/pdf",
