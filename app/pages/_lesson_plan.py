@@ -21,7 +21,7 @@ except ImportError:
 from src.config import P, get_max_pdf_pages, LOCAL_PDF_MAX_PAGES, CLOUD_PDF_MAX_PAGES, SUBJECT_LIST
 from src.prompts.system_prompts import SYSTEM_PROMPTS, MATH_INSTRUCTION
 from src.models import call_ai, stream_ai
-from src.app_utils import encode_image_to_base64, make_pdf_bytes, parse_thinking_response, _pdf_extract_content, _parse_question_list, safe_filename, parse_quiz_markdown
+import src.app_utils as app_utils
 
 def get_session_config() -> tuple[str, str, str]:
     return (
@@ -83,7 +83,7 @@ def render_lesson_plan() -> None:
                             page_count = len(reader.pages)
                         except Exception: pass
                     
-                    text, images, method = _pdf_extract_content(file_bytes, page_count, "")
+                    text, images, method = app_utils._pdf_extract_content(file_bytes, page_count, "")
                     if text.strip():
                         pdf_content += f"\n\n[파일: {up.name}]\n{text}"
                     if images:
@@ -120,7 +120,7 @@ def render_lesson_plan() -> None:
     if st.session_state.get("lesson_plan_result"):
         st.subheader("📋 생성된 교안")
         # 생각 과정 제거 및 후처리 적용
-        _, final_content = parse_thinking_response(st.session_state.lesson_plan_result)
+        _, final_content = app_utils.parse_thinking_response(st.session_state.lesson_plan_result)
         st.markdown(final_content, unsafe_allow_html=True)
         
         # 파일명 접두어 준비
@@ -129,16 +129,16 @@ def render_lesson_plan() -> None:
              # 다중 업로드일 경우 첫 번째 파일명 활용
              first_up = st.session_state.plan_pdf_upload[0] if isinstance(st.session_state.plan_pdf_upload, list) else st.session_state.plan_pdf_upload
              base_name = os.path.splitext(first_up.name)[0]
-        base_name = safe_filename(base_name)
+        base_name = app_utils.safe_filename(base_name)
         
         dl_col1, dl_col2 = st.columns([1, 1])
         with dl_col1:
-            _, final_md = parse_thinking_response(st.session_state.lesson_plan_result)
+            _, final_md = app_utils.parse_thinking_response(st.session_state.lesson_plan_result)
             st.download_button("💾 Markdown 저장", data=final_md.encode('utf-8-sig'),
                                file_name=f"{base_name}.md", mime="text/markdown",
                                key="dl_plan_md", use_container_width=True)
         with dl_col2:
-            pdf_bytes = make_pdf_bytes(st.session_state.lesson_plan_result)
+            pdf_bytes = app_utils.make_pdf_bytes(st.session_state.lesson_plan_result)
             if pdf_bytes:
                 st.download_button("💾 PDF 저장", data=pdf_bytes,
                                    file_name=f"{base_name}.pdf", mime="application/pdf",

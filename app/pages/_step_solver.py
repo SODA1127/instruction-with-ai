@@ -89,7 +89,7 @@ def render_step_solver() -> None:
                         page_count = len(reader.pages)
                     except Exception:
                         pass
-                extracted_text, extracted_images, extr_method = _pdf_extract_content(file_bytes, page_count, "")
+                extracted_text, extracted_images, extr_method = app_utils._pdf_extract_content(file_bytes, page_count, "")
                 if extr_method == "text" and extracted_text.strip():
                     problem_text = extracted_text
                 else:

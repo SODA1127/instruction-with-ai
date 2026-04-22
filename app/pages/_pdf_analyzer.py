@@ -357,7 +357,7 @@ def _run_pdf_analysis(
     # ── 공통: 텍스트/이미지 추출 ────────────────────────────────
     with st.status("📄 PDF 내용 추출 중...", expanded=True) as status:
         st.write("📝 텍스트 추출 시도 중...")
-        content_text, images_b64, method = _pdf_extract_content(
+        content_text, images_b64, method = app_utils._pdf_extract_content(
             file_bytes, page_count, page_range
         )
         if method == "text":
@@ -399,12 +399,12 @@ def _run_pdf_analysis(
                         raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=chunk)
                         debug_raw_responses.append(raw_qs)
                         _, clean_qs = app_utils.parse_thinking_response(raw_qs)
-                        questions.extend(_parse_question_list(clean_qs or raw_qs))
+                        questions.extend(app_utils._parse_question_list(clean_qs or raw_qs))
                 else:
                     raw_qs = call_ai(q_system, q_prompt, provider, model, api_key, images_b64=None)
                     debug_raw_responses.append(raw_qs)
                     _, clean_qs = app_utils.parse_thinking_response(raw_qs)
-                    questions = _parse_question_list(clean_qs or raw_qs)
+                    questions = app_utils._parse_question_list(clean_qs or raw_qs)
             except Exception as e:
                 st.error(f"❌ 문제 추출 실패: {e}")
                 status.update(label="실패", state="error")

@@ -3,7 +3,7 @@ import streamlit as st
 import os
 from src.config import SUBJECT_LIST
 from src.db_manager import db
-from src.app_utils import make_pdf_bytes, safe_filename
+import src.app_utils as app_utils
 
 def render_wrong_notes() -> None:
     """📚 기능: 나의 오답노트 모아보기 (과목별 관리)"""
@@ -77,17 +77,17 @@ def render_wrong_notes() -> None:
             st.download_button(
                 "💾 MD 내보내기",
                 data=all_md.encode('utf-8-sig'),
-                file_name=safe_filename(f"오답노트_{selected_filter}.md"),
+                file_name=app_utils.safe_filename(f"오답노트_{selected_filter}.md"),
                 mime="text/markdown",
                 use_container_width=True
             )
         with dl_col2:
-            pdf_bytes = make_pdf_bytes(all_md)
+            pdf_bytes = app_utils.make_pdf_bytes(all_md)
             if pdf_bytes:
                 st.download_button(
                     "💾 PDF 내보내기",
                     data=pdf_bytes,
-                    file_name=safe_filename(f"오답노트_{selected_filter}.pdf"),
+                    file_name=app_utils.safe_filename(f"오답노트_{selected_filter}.pdf"),
                     mime="application/pdf",
                     use_container_width=True
                 )
