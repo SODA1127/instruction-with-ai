@@ -180,99 +180,88 @@ def parse_quiz_markdown(text: str) -> list[dict]:
                 current_q["content"] += "\n" + line
             else:
                 # 선택지 이후에 나오는 텍스트는 보통 설명의 시작임
-                current_q["explanation"] += (("\n" if current_q["explanation"] else "") + line)
-        
-        current_q["raw"] += "\n" + raw_line
-
-    if current_q:
-        questions.append(current_q)
-        
-    # 결과 정제
-    for q in questions:
-        q["content"] = q["content"].strip("-*# ")
-        # 정답에서 원형 숫자 등을 일반 숫자로 변환
-        q["answer"] = q["answer"].replace('①','1').replace('②','2').replace('③','3').replace('④','4').replace('⑤','5')
-        
-    return questions
-
-def clean_text_symbols(text: str) -> str:
-    """텍스트 내의 불필요한 수학 기호($) 및 코드 백틱 중복 문제를 정제합니다."""
-    if not text: return ""
-    # 1. 백틱 안의 $, \(, \) 기호 제거 (예: `$code$`, `\(math\)` -> `code`, `math`)
-    text = re.sub(r'`[\$\\]*\(?([^`\$]+?)[\$\\]*\)?`', r'`\1`', text)
-    # 2. 백틱 없이 $만 남은 중복 기호 제거 (예: $$$ -> $$)
-    text = re.sub(r'\${3,}', '$$', text)
-    # 3. 이스케이프된 특수문자 복원
-    text = text.replace("\\*\\*", "**").replace("\\*", "*")
-    return text.strip()
-
-def parse_quiz_json(text: str) -> list[dict]:
-    """텍스트 내의 JSON 블록을 찾아 추출하고 리스트 형태로 반환합니다."""
-    # 0. 전처리: AI가 제멋대로 붙이는 인사말이나 아웃트로 텍스트 제거
-    # 💡 [보완] [ 또는 ``` 이전에 나오는 모든 텍스트는 인사말로 간주하고 제거
+def parse_quiz_json(text: str) -> dict:
+    """텍스트 내의 JSON 블록을 찾아 추출하여 지문(passage)과 문항 리스트(questions)를 반환합니다."""
+    # 0. 전처리
     preamble_match = re.search(r'(\[|\{|\s*```json)', text)
     if preamble_match and preamble_match.start() > 0:
         text = text[preamble_match.start():]
 
-    # 생각(Thinking) 채널 제거
     text = re.sub(r'<\|channel>.*?<channel\|>', '', text, flags=re.DOTALL)
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    
-    # 💡 [보완] AI가 이전 대화 등을 기억해서 제멋대로 넣는 HTML 태그 제거 (hallucination 방지)
     text = re.sub(r'</?(?:details|summary|b|style|div|span)[^>]*>', '', text, flags=re.IGNORECASE)
     
+    result = {"passage": "", "questions": []}
+    
     try:
-        # 1. JSON 코드 블록 추출
+        data = None
         json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
         if json_match:
             data = json.loads(json_match.group(1))
         else:
-            # 2. 코드 블록이 없다면 전체 텍스트에서 [ ] 형태 추출 시도
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', text, re.DOTALL)
+            json_match = re.search(r'(\[[\s\S]*\]|\{[\s\S]*\})', text)
             if json_match:
                 data = json.loads(json_match.group(0))
             else:
-                # 3. 최후의 수단: 마크다운 파서로 넘김 (이때도 전처리된 text 사용)
-                return parse_quiz_markdown(text)
+                result["questions"] = parse_quiz_markdown(text)
+                return result
         
-        # 데이터가 { "questions": [...] } 형태라면 추출
-        if isinstance(data, dict):
-            if "questions" in data: data = data["questions"]
-            elif "quiz" in data: data = data["quiz"]
-            else: data = [data]
+        # 데이터 구조 정규화
+        if isinstance(data, list):
+            result["questions"] = data
+        elif isinstance(data, dict):
+            if "questions" in data:
+                result["questions"] = data["questions"]
+                result["passage"] = data.get("passage", "")
+            elif "problems" in data:
+                result["questions"] = data["problems"]
+                result["passage"] = data.get("passage", "")
+            elif "quiz" in data:
+                result["questions"] = data["quiz"]
+            else:
+                result["questions"] = [data]
         
-        # 비정상적인 데이터 구조 보정
-        for q in data:
+        # 문항 데이터 보정
+        for q in result["questions"]:
             q.setdefault("number", "1")
             q.setdefault("type", "multiple_choice" if q.get("options") else "short_answer")
-            
-            # 모든 텍스트 필드 정제
             q["content"] = clean_text_symbols(str(q.get("content", "")))
             q["answer"] = clean_text_symbols(str(q.get("answer", "")))
             q["explanation"] = clean_text_symbols(str(q.get("explanation", "")))
             if q.get("options"):
                 q["options"] = [clean_text_symbols(str(opt)) for opt in q["options"]]
             
-            # 타입이 multiple_choice인데 문항 내용에 보기가 섞여들어온 경우 처리
-            if q["type"] == "multiple_choice" and not q["options"]:
+            if q["type"] == "multiple_choice" and not q.get("options"):
                 found_opts = re.findall(r'(\d+[\)\.]|[①-⑩])\s*([^\d①-⑩\n]+)', q["content"])
                 if found_opts:
                     q["options"] = [f"{m}{t.strip()}" for m, t in found_opts]
                     for m, t in found_opts:
                         q["content"] = q["content"].replace(f"{m}{t}", "").strip()
 
-            # 정답 번호 정규화
             if q["answer"]:
                 q["answer"] = q["answer"].replace('①','1').replace('②','2').replace('③','3').replace('④','4').replace('⑤','5')
         
-        return data
+        return result
     except Exception as e:
         print(f"JSON Parsing Error: {e}")
-        return parse_quiz_markdown(text)
+        result["questions"] = parse_quiz_markdown(text)
+        return result
 
-def questions_to_markdown(questions: list[dict]) -> str:
+def questions_to_markdown(quiz_data: dict or list) -> str:
     """JSON 데이터를 사람이 읽기 좋은 예쁜 마크다운 문서로 변환합니다."""
+    if isinstance(quiz_data, list):
+        passage = ""
+        questions = quiz_data
+    else:
+        passage = quiz_data.get("passage", "")
+        questions = quiz_data.get("questions", [])
+
     md = ""
+    if passage:
+        md += "## 📖 다음 지문을 읽고 물음에 답하시오.\n\n"
+        md += f"> {passage}\n\n"
+        md += "---\n\n"
+
     for q in questions:
         md += f"### 문항 {q.get('number', '')}\n\n"
         md += f"{q.get('content', '')}\n\n"

@@ -141,9 +141,9 @@ def render_quiz_generator() -> None:
         audience_type = st.session_state.get("user_mode", "수강생용")
         full_prompt = (f"[{audience_type} 관점에서 문항 출제]\n\n{user_prompt}\n\n"
                        f"### 매우 중요한 지시사항 (반드시 준수) ###\n"
-                       f"1. 모든 응답은 반드시 `[` 기호로 시작하여 `]` 기호로 끝나야 합니다. (JSON 배열 형식)\n"
-                       f"2. 인사말('안녕하세요', '준비했습니다' 등)이나 서론, 결론을 절대 포함하지 마십시오.\n"
-                       f"3. 마크다운 코드 블록(```json)을 사용하지 말고 곧바로 JSON 텍스트만 출력하십시오.\n"
+                       f"1. 모든 응답은 반드시 `{{` 기호로 시작하여 `}}` 기호로 끝나야 합니다. (JSON 객체 형식)\n"
+                       f"2. 전체 지문이 있다면 반드시 'passage' 필드에 포함하고, 문항들은 'questions' 필드에 배열로 담으십시오.\n"
+                       f"3. 인사말('안녕하세요', '준비했습니다' 등)이나 서론, 결론을 절대 포함하지 마십시오.\n"
                        f"4. 해설 내에서 1., 2. 같은 번호 매기기를 절대 하지 말고 '-' 기호만 사용하십시오.")
         
         try:
@@ -158,12 +158,16 @@ def render_quiz_generator() -> None:
             thinking, final_raw = app_utils.parse_thinking_response(result)
             
             # 1. JSON 파싱 시도
-            quiz_list = app_utils.parse_quiz_json(final_raw)
+            quiz_data = app_utils.parse_quiz_json(final_raw)
+            quiz_list = quiz_data.get("questions", [])
+            passage = quiz_data.get("passage", "")
+            
             st.session_state.quiz_list = quiz_list 
+            st.session_state.quiz_passage = passage
             st.session_state.quiz_gen_thinking = thinking
             
             # 2. 화면 표시용 마크다운 생성
-            final_md = app_utils.questions_to_markdown(quiz_list)
+            final_md = app_utils.questions_to_markdown(quiz_data)
             st.session_state.quiz_gen_final = final_md
             
             # JSON 파싱 실패 시 경고 표시
@@ -177,7 +181,9 @@ def render_quiz_generator() -> None:
 
     if st.session_state.get("quiz_gen_final"):
         thinking = st.session_state.get("quiz_gen_thinking", "")
+        passage = st.session_state.get("quiz_passage", "")
         final = st.session_state.quiz_gen_final
+
         if thinking:
             with st.expander("🎯 출제 의도 및 AI 분석", expanded=False):
                 st.markdown(
@@ -185,6 +191,18 @@ def render_quiz_generator() -> None:
                     f'padding:16px;border-radius:8px;font-size:0.85rem;'
                     f'color:#6ee7b7;white-space:pre-wrap;">{thinking}</div>',
                     unsafe_allow_html=True)
+        
+        # 지문이 있다면 상단에 렌더링
+        if passage:
+            st.info("📖 **공통 지문**")
+            st.markdown(
+                f'<div style="background:#f8fafc; border:1px solid #e2e8f0; padding:20px; '
+                f'border-radius:12px; font-family:\'Noto Sans KR\', sans-serif; color:#334155; '
+                f'line-height:1.7; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">'
+                f'{passage}</div>',
+                unsafe_allow_html=True
+            )
+            st.divider()
         # ── 생성된 평가 문항 렌더링 (정답 섹션은 Expander로 보호) ──────────────────
         st.subheader("📝 생성된 평가 문항")
         

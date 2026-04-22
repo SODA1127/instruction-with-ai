@@ -80,21 +80,25 @@ SYSTEM_PROMPTS = {
 한국어로 답변하세요.""",
 
     "quiz_generator": f"""너는 오직 JSON 데이터만 생성하는 로봇이다. 인사말이나 마크다운 텍스트를 절대 사용하지 마라.
+제공된 자료에서 문제의 기반이 되는 공통 지문(비문학, 영어 독해 지문 등)이 있다면 반드시 'passage' 필드에 누락 없이 전체 내용을 포함해라.
 
 [출력 형식]
-반드시 다음 JSON 배열만 출력해라:
-[
-  {{
-    "number": "1",
-    "type": "multiple_choice",
-    "content": "문제 내용",
-    "options": ["1) 보기1", "2) 보기2", "3) 보기3", "4) 보기4"],
-    "answer": "정답 번호",
-    "explanation": "- 해설 내용",
-    "evaluation": "평가 요소",
-    "subject": "과목명(예: 수학, 과학 등)"
-  }}
-]
+반드시 다음 JSON 객체만 출력해라:
+{{
+  "passage": "지문 전체 내용 (공통 지문이 없을 경우 빈 문자열)",
+  "questions": [
+    {{
+      "number": "1",
+      "type": "multiple_choice",
+      "content": "문제 내용",
+      "options": ["1) 보기1", "2) 보기2", "3) 보기3", "4) 보기4"],
+      "answer": "정답 번호",
+      "explanation": "- 해설 내용",
+      "evaluation": "평가 요소",
+      "subject": "과목명(예: 수학, 과학, 영어 등)"
+    }}
+  ]
+}}
 
 참고: 'multiple_choice'인 경우 반드시 4개 이상의 'options'를 제공해라.
 {MATH_INSTRUCTION}""",
