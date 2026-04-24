@@ -180,6 +180,13 @@ def parse_quiz_markdown(text: str) -> list[dict]:
                 current_q["content"] += "\n" + line
             else:
                 # 선택지 이후에 나오는 텍스트는 보통 설명의 시작임
+                current_q["explanation"] += (("\n" if current_q["explanation"] else "") + line)
+
+    if current_q:
+        questions.append(current_q)
+    
+    return questions
+
 def parse_quiz_json(text: str) -> dict:
     """텍스트 내의 JSON 블록을 찾아 추출하여 지문(passage)과 문항 리스트(questions)를 반환합니다."""
     # 0. 전처리
