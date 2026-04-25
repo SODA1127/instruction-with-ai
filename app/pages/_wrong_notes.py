@@ -17,20 +17,38 @@ def render_wrong_notes() -> None:
     remote_notes = []
     if st.user.is_logged_in:
         try:
-            # 속성 방식과 딕셔너리 방식 모두 시도
-            user_id = getattr(st.user, "sub", None) or (st.user.get("sub") if hasattr(st.user, "get") else None)
+            # 🔍 디버그 정보 (사용자에게 직접 보여줌)
+            u_id = getattr(st.user, "sub", None) or (st.user.get("sub") if hasattr(st.user, "get") else None)
+            u_email = getattr(st.user, "email", None) or (st.user.get("email") if hasattr(st.user, "get") else None)
             
-            if user_id:
-                with st.spinner("과거 기록 불러오는 중..."):
-                    results = db.get_quiz_results(user_id)
+            with st.expander("🛠️ 데이터베이스 연결 디버그 정보 (문제가 해결되면 사라집니다)", expanded=True):
+                st.write(f"- **현재 세션 ID:** `{u_id}`")
+                st.write(f"- **현재 세션 이메일:** `{u_email}`")
+            
+            if u_id:
+                with st.spinner("데이터베이스에서 오답 기록을 동기화 중..."):
+                    # 1차 시도: 직접 ID로 조회
+                    results = db.get_quiz_results(u_id)
+                    
+                    # 2차 시도: ID로 안 나오면 이메일로 프로필 찾아서 다시 시도 (ID 불일치 대비)
+                    if not results and u_email:
+                        st.write("💡 ID로 기록을 찾지 못해 이메일로 재시도합니다...")
+                        profile_res = db.get_supabase_client().table('profiles').select('id').eq('email', u_email).execute()
+                        if profile_res.data:
+                            real_db_id = profile_res.data[0]['id']
+                            st.write(f"✅ DB에서 찾은 실제 ID: `{real_db_id}`")
+                            results = db.get_quiz_results(real_db_id)
+                    
                     for res in results:
-                        # incorrect_answers 컬럼이 JSON 리스트임
                         inc_list = res.get("incorrect_answers", [])
                         if isinstance(inc_list, list):
                             for item in inc_list:
                                 if "subject" not in item:
                                     item["subject"] = res.get("quiz_title", "기타")
                                 remote_notes.append(item)
+                    
+                    if remote_notes:
+                        st.success(f"✅ 총 {len(remote_notes)}개의 오답 기록을 불러왔습니다!")
         except Exception as e:
             st.error(f"⚠️ 기록 조회 오류: {e}")
 
