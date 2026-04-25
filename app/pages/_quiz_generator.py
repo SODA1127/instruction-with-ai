@@ -88,7 +88,7 @@ def render_quiz_generator() -> None:
                 st.warning("⚠️ 이미지를 업로드하세요.")
                 return
             for up in ups:
-                img_list.append(encode_image_to_base64(up))
+                img_list.append(app_utils.encode_image_to_base64(up))
             content_text = "업로드된 이미지의 학습 내용을 바탕으로 문항을 출제해주세요."
         else:
             if not ups:

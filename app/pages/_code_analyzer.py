@@ -81,17 +81,18 @@ def render_code_analyzer() -> None:
 
         if st.session_state.get("code_analyzer_result"):
             st.subheader("📋 분석 결과")
-            st.markdown(st.session_state.code_analyzer_result, unsafe_allow_html=True)
+            # 생각 과정 제거 및 후처리 적용
+            _, final_content = app_utils.parse_thinking_response(st.session_state.code_analyzer_result)
+            st.markdown(final_content, unsafe_allow_html=True)
             
             dl_col1, dl_col2 = st.columns([1, 1])
-            base_name = "code_analysis"
-            if uploaded:
-                base_name = os.path.splitext(uploaded.name)[0]
-            base_name = safe_filename(base_name)
+            base_name = os.path.splitext(uploaded.name)[0] if uploaded else "code_analysis"
+            # app_utils. 필요
+            clean_base_name = app_utils.safe_filename(base_name)
             
             with dl_col1:
                 st.download_button("💾 분석 결과 저장 (.md)", data=st.session_state.code_analyzer_result.encode('utf-8-sig'),
-                                   file_name=f"{base_name}_analysis.md", mime="text/markdown",
+                                   file_name=f"{clean_base_name}_analysis.md", mime="text/markdown",
                                    key="dl_code_md", use_container_width=True)
             with dl_col2:
                 pdf_bytes = app_utils.make_pdf_bytes(st.session_state.code_analyzer_result)

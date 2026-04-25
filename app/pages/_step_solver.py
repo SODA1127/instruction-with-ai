@@ -73,7 +73,7 @@ def render_step_solver() -> None:
             if not up:
                 st.warning("⚠️ 이미지를 업로드하세요.")
                 return
-            img_b64 = encode_image_to_base64(up)
+            img_b64 = app_utils.encode_image_to_base64(up)
             img_list = [img_b64]
             problem_text = "업로드된 이미지의 문제를 단계별로 풀어주세요."
         else:
