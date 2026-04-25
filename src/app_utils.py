@@ -229,14 +229,26 @@ def parse_quiz_json(text: str) -> dict:
     result = {"passage": "", "questions": []}
     
     try:
+        from json_repair import repair_json
+    except ImportError:
+        def repair_json(t): return t
+
+    try:
         data = None
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        
+        # [NEW] LaTeX 수식을 위한 백슬래시 이스케이프 전처리
+        # 유효한 JSON 이스케이프(n, r, t, b, f, u, ", \, /)가 아닌 백슬래시를 강제로 이중 백슬래시로 변환
+        safe_text = re.sub(r'\\(?![nrtbfu"\\/])', r'\\\\', text)
+        
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', safe_text)
         if json_match:
-            data = json.loads(json_match.group(1))
+            repaired = repair_json(json_match.group(1))
+            data = json.loads(repaired) if isinstance(repaired, str) else repaired
         else:
-            json_match = re.search(r'(\[[\s\S]*\]|\{[\s\S]*\})', text)
+            json_match = re.search(r'(\[[\s\S]*\]|\{[\s\S]*\})', safe_text)
             if json_match:
-                data = json.loads(json_match.group(0))
+                repaired = repair_json(json_match.group(0))
+                data = json.loads(repaired) if isinstance(repaired, str) else repaired
             else:
                 result["questions"] = parse_quiz_markdown(text)
                 return result
