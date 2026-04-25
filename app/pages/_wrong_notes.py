@@ -24,8 +24,11 @@ def render_wrong_notes() -> None:
             with st.expander("🛠️ 데이터베이스 연결 디버그 정보 (문제가 해결되면 사라집니다)", expanded=True):
                 st.write(f"- **현재 세션 ID:** `{u_id}`")
                 st.write(f"- **현재 세션 이메일:** `{u_email}`")
-                # URL 확인용 (pjlegfqh... 인지 확인)
+                # 환경 확인용
                 try:
+                    import streamlit
+                    st.write(f"- **스트림릿 버전:** `{streamlit.__version__}`")
+                    st.write(f"- **현재 작업 경로 (CWD):** `{os.getcwd()}`")
                     target_url = st.secrets.get("SUPABASE_URL", "미설정")
                     st.write(f"- **연결된 Supabase URL:** `{target_url}`")
                 except: pass
