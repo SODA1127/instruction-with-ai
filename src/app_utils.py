@@ -61,12 +61,11 @@ def clean_text_symbols(text: str) -> str:
     text = text.replace(r'\_', '_')
     
     # 2. 수식 내 % 기호 처리 (LaTeX 표준 \%로 통일)
-    # 가끔 AI가 \\% 또는 $\%$ 등으로 출력하는 경우를 대비
     text = re.sub(r'\\+%', '%', text)
     text = text.replace('%', r'\%')
     text = text.replace(r'\\%', r'\%') # 중복 방지
     
-    # 3. 불필요한 태그 제거 (parse_quiz_json 등에서도 사용됨)
+    # 3. 불필요한 태그 제거
     text = re.sub(r'</?(?:details|summary|div|span|b|i|style)[^>]*>', '', text, flags=re.IGNORECASE)
     
     # 4. 공백 정제
@@ -209,8 +208,13 @@ def parse_quiz_markdown(text: str) -> list[dict]:
     if current_q:
         questions.append(current_q)
     
+    # 결과 정제
+    for q in questions:
+        q["content"] = q["content"].strip("-*# ")
+        # 정답에서 원형 숫자 등을 일반 숫자로 변환
+        q["answer"] = q["answer"].replace('①','1').replace('②','2').replace('③','3').replace('④','4').replace('⑤','5')
+        
     return questions
-
 def parse_quiz_json(text: str) -> dict:
     """텍스트 내의 JSON 블록을 찾아 추출하여 지문(passage)과 문항 리스트(questions)를 반환합니다."""
     # 0. 전처리

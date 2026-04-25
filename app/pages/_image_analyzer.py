@@ -61,12 +61,9 @@ def render_image_analyzer() -> None:
                 st.warning("⚠️ 이미지를 먼저 업로드하세요.")
                 return
             user_mode = st.session_state.get("user_mode", "👨‍🎓 수강생용")
-            # user_prompt 정의 추가
-            user_prompt = f"분석 유형: {analysis_type}\n추가 정보: {extra_info}"
             full_prompt = f"[{user_mode} 관점에서 분석]\n\n{user_prompt}"
             try:
                 with st.spinner("🤖 AI가 이미지를 분석하는 중..."):
-                    # app_utils. 필요
                     b64 = app_utils.encode_image_to_base64(uploaded)
                     result = call_ai(SYSTEM_PROMPTS["image_analyzer"],
                                      full_prompt, provider, model, api_key,
@@ -82,18 +79,19 @@ def render_image_analyzer() -> None:
             st.markdown(final_content, unsafe_allow_html=True)
             dl_col1, dl_col2 = st.columns([1, 1])
             # 파일명 접두어 준비
-            base_name = os.path.splitext(uploaded.name)[0] if uploaded else "image_analysis"
-            # app_utils. 필요
-            clean_base_name = app_utils.safe_filename(base_name)
+            base_name = "image_analysis"
+            if uploaded:
+                base_name = os.path.splitext(uploaded.name)[0]
+            base_name = app_utils.safe_filename(base_name)
             
             with dl_col1:
                 st.download_button("💾 결과 저장 (.md)", data=st.session_state.img_analyzer_result.encode('utf-8-sig'),
-                                   file_name=f"{clean_base_name}.md", mime="text/markdown",
+                                   file_name=f"{base_name}.md", mime="text/markdown",
                                    key="download_img_result_md", use_container_width=True)
             with dl_col2:
                 pdf_bytes = app_utils.make_pdf_bytes(st.session_state.img_analyzer_result)
                 if pdf_bytes:
                     st.download_button("💾 결과 저장 (.pdf)", data=pdf_bytes,
-                                       file_name=f"{clean_base_name}.pdf", mime="application/pdf",
+                                       file_name=f"{base_name}.pdf", mime="application/pdf",
                                        key="download_img_result_pdf", use_container_width=True)
 
