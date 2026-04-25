@@ -24,6 +24,11 @@ def render_wrong_notes() -> None:
             with st.expander("🛠️ 데이터베이스 연결 디버그 정보 (문제가 해결되면 사라집니다)", expanded=True):
                 st.write(f"- **현재 세션 ID:** `{u_id}`")
                 st.write(f"- **현재 세션 이메일:** `{u_email}`")
+                # URL 확인용 (pjlegfqh... 인지 확인)
+                try:
+                    target_url = st.secrets.get("SUPABASE_URL", "미설정")
+                    st.write(f"- **연결된 Supabase URL:** `{target_url}`")
+                except: pass
             
             if u_id:
                 with st.spinner("데이터베이스에서 오답 기록을 동기화 중..."):
@@ -33,7 +38,10 @@ def render_wrong_notes() -> None:
                     # 2차 시도: ID로 안 나오면 이메일로 프로필 찾아서 다시 시도 (ID 불일치 대비)
                     if not results and u_email:
                         st.write("💡 ID로 기록을 찾지 못해 이메일로 재시도합니다...")
-                        profile_res = db.get_supabase_client().table('profiles').select('id').eq('email', u_email).execute()
+                        # src.db_manager 에서 함수를 직접 가져옴
+                        import src.db_manager as db_module
+                        client = db_module.get_supabase_client()
+                        profile_res = client.table('profiles').select('id').eq('email', u_email).execute()
                         if profile_res.data:
                             real_db_id = profile_res.data[0]['id']
                             st.write(f"✅ DB에서 찾은 실제 ID: `{real_db_id}`")
