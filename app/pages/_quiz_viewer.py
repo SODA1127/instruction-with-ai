@@ -1,6 +1,6 @@
 import streamlit as st
 import src.app_utils as app_utils
-import src.db_manager as db
+from src.db_manager import db
 
 def render_quiz_viewer(quiz_id: str) -> None:
     """🔗 공유된 퀴즈를 풀 수 있는 전용 뷰어 페이지"""

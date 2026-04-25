@@ -18,7 +18,7 @@ from app.pages import (
     render_code_analyzer, render_feedback_form, render_wrong_notes,
     render_quiz_viewer
 )
-import src.db_manager as db
+from src.db_manager import db
 # from src.st_google_auth import st_google_auth  # 더 이상 필요 없음
 
 CUSTOM_MODEL_OPTION = "✍️ 직접 입력..."
