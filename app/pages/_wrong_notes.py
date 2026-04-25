@@ -17,51 +17,38 @@ def render_wrong_notes() -> None:
     remote_notes = []
     if st.user.is_logged_in:
         try:
-            # 🔍 디버그 정보 (사용자에게 직접 보여줌)
             u_id = getattr(st.user, "sub", None) or (st.user.get("sub") if hasattr(st.user, "get") else None)
             u_email = getattr(st.user, "email", None) or (st.user.get("email") if hasattr(st.user, "get") else None)
             
-            with st.expander("🛠️ 데이터베이스 연결 디버그 정보 (문제가 해결되면 사라집니다)", expanded=True):
-                st.write(f"- **현재 세션 ID:** `{u_id}`")
-                st.write(f"- **현재 세션 이메일:** `{u_email}`")
-                # 환경 확인용
-                try:
-                    import streamlit
-                    st.write(f"- **스트림릿 버전:** `{streamlit.__version__}`")
-                    st.write(f"- **현재 작업 경로 (CWD):** `{os.getcwd()}`")
-                    target_url = st.secrets.get("SUPABASE_URL", "미설정")
-                    st.write(f"- **연결된 Supabase URL:** `{target_url}`")
-                except: pass
-            
             if u_id:
-                with st.spinner("데이터베이스에서 오답 기록을 동기화 중..."):
-                    # 1차 시도: 직접 ID로 조회
-                    results = db.get_quiz_results(u_id)
-                    
-                    # 2차 시도: ID로 안 나오면 이메일로 프로필 찾아서 다시 시도 (ID 불일치 대비)
-                    if not results and u_email:
-                        st.write("💡 ID로 기록을 찾지 못해 이메일로 재시도합니다...")
-                        # src.db_manager 에서 함수를 직접 가져옴
-                        import src.db_manager as db_module
-                        client = db_module.get_supabase_client()
-                        profile_res = client.table('profiles').select('id').eq('email', u_email).execute()
-                        if profile_res.data:
-                            real_db_id = profile_res.data[0]['id']
-                            st.write(f"✅ DB에서 찾은 실제 ID: `{real_db_id}`")
-                            results = db.get_quiz_results(real_db_id)
-                    
-                    for res in results:
-                        inc_list = res.get("incorrect_answers", [])
-                        if isinstance(inc_list, list):
-                            for item in inc_list:
-                                if "subject" not in item:
-                                    item["subject"] = res.get("quiz_title", "기타")
-                                remote_notes.append(item)
-                    
-                    if remote_notes:
-                        st.success(f"✅ 총 {len(remote_notes)}개의 오답 기록을 불러왔습니다!")
+                results = db.get_quiz_results(u_id)
+                
+                # ID로 안 나오면 이메일로 재시도
+                if not results and u_email:
+                    import src.db_manager as db_module
+                    client = db_module.get_supabase_client()
+                    profile_res = client.table('profiles').select('id').eq('email', u_email).execute()
+                    if profile_res.data:
+                        results = db.get_quiz_results(profile_res.data[0]['id'])
+                
+                # 결과 처리
+                for res in results:
+                    inc_list = res.get("incorrect_answers", [])
+                    if isinstance(inc_list, list):
+                        for item in inc_list:
+                            if "subject" not in item:
+                                item["subject"] = res.get("quiz_title", "기타")
+                            remote_notes.append(item)
+                
+                # 데이터가 하나도 없을 때만 디버그 정보 노출 (옵션)
+                if not remote_notes and st.query_params.get("debug"):
+                    with st.expander("🛠️ 데이터베이스 연결 디버그 정보", expanded=True):
+                        st.write(f"- ID: `{u_id}` | Email: `{u_email}`")
+                        st.write(f"- URL: `{st.secrets.get('SUPABASE_URL', '미설정')}`")
         except Exception as e:
-            st.error(f"⚠️ 기록 조회 오류: {e}")
+            st.error(f"⚠️ 오답 기록을 불러오는 중 오류가 발생했습니다.")
+            with st.expander("상세 에러 정보"):
+                st.exception(e)
 
     # 3. 통합 (중복 제거는 문제 내용 기준)
     notes = local_notes.copy()
