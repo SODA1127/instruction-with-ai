@@ -16,19 +16,21 @@ def render_wrong_notes() -> None:
     # 2. 로그인 상태일 경우 DB에서 과거 오답 가져오기
     remote_notes = []
     if st.user.is_logged_in:
-        user_id = st.user.sub
         try:
-            with st.spinner("과거 기록 불러오는 중..."):
-                results = db.get_quiz_results(user_id)
-                for res in results:
-                    # incorrect_answers 컬럼이 JSON 리스트임
-                    inc_list = res.get("incorrect_answers", [])
-                    if isinstance(inc_list, list):
-                        # 각 문항에 퀴즈 제목(과목) 정보 주입
-                        for item in inc_list:
-                            if "subject" not in item:
-                                item["subject"] = res.get("quiz_title", "기타")
-                            remote_notes.append(item)
+            # 속성 방식과 딕셔너리 방식 모두 시도
+            user_id = getattr(st.user, "sub", None) or (st.user.get("sub") if hasattr(st.user, "get") else None)
+            
+            if user_id:
+                with st.spinner("과거 기록 불러오는 중..."):
+                    results = db.get_quiz_results(user_id)
+                    for res in results:
+                        # incorrect_answers 컬럼이 JSON 리스트임
+                        inc_list = res.get("incorrect_answers", [])
+                        if isinstance(inc_list, list):
+                            for item in inc_list:
+                                if "subject" not in item:
+                                    item["subject"] = res.get("quiz_title", "기타")
+                                remote_notes.append(item)
         except Exception as e:
             st.error(f"⚠️ 기록 조회 오류: {e}")
 

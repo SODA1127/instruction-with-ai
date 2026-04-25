@@ -350,10 +350,13 @@ def render_quiz_generator() -> None:
             
             # --- [추가] 로그인 상태일 경우 DB에 결과 저장 ---
             if st.user.is_logged_in:
-                user_id = st.user.sub
-                quiz_title = st.session_state.get("quiz_current_subject", "일반 퀴즈")
-                score = sum(1 for v in st.session_state.quiz_results.values() if v)
-                total = len(questions)
+                # 속성 방식과 딕셔너리 방식 모두 시도
+                user_id = getattr(st.user, "sub", None) or (st.user.get("sub") if hasattr(st.user, "get") else None)
+                
+                if user_id:
+                    quiz_title = st.session_state.get("quiz_current_subject", "일반 퀴즈")
+                    score = sum(1 for v in st.session_state.quiz_results.values() if v)
+                    total = len(questions)
                 # 틀린 문제 데이터만 추출하여 저장
                 incorrect_data = [questions[idx] for idx, v in st.session_state.quiz_results.items() if not v]
                 

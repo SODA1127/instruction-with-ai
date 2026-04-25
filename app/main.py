@@ -50,16 +50,22 @@ def render_sidebar() -> str:
             # 로그인 성공 후 프로필 DB 업데이트
             if "profile_updated" not in st.session_state:
                 try:
-                    success = db.upsert_profile(
-                        user_id=st.user.sub,
-                        email=st.user.email,
-                        full_name=st.user.name,
-                        avatar_url=st.user.get("picture") if hasattr(st.user, "get") else getattr(st.user, "picture", None)
-                    )
-                    if success:
-                        st.session_state.profile_updated = True
-                except Exception as e:
-                    # 너무 빈번한 에러 표시 방지를 위해 세션당 한 번만 혹은 로그로 처리
+                    # 속성 방식과 딕셔너리 방식 모두 시도
+                    u_id = getattr(st.user, "sub", None) or st.user.get("sub")
+                    u_email = getattr(st.user, "email", None) or st.user.get("email")
+                    u_name = getattr(st.user, "name", None) or st.user.get("name")
+                    u_pic = getattr(st.user, "picture", None) or st.user.get("picture")
+                    
+                    if u_id:
+                        success = db.upsert_profile(
+                            user_id=u_id,
+                            email=u_email,
+                            full_name=u_name,
+                            avatar_url=u_pic
+                        )
+                        if success:
+                            st.session_state.profile_updated = True
+                except Exception:
                     pass
             
             # 프로필 UI
