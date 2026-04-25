@@ -356,9 +356,20 @@ def render_quiz_generator() -> None:
                 total = len(questions)
                 # 틀린 문제 데이터만 추출하여 저장
                 incorrect_data = [questions[idx] for idx, v in st.session_state.quiz_results.items() if not v]
-                try:
-                    db.save_quiz_result(user_id, quiz_title, score, total, incorrect_data)
-                except Exception: pass
+                
+                if incorrect_data:
+                    try:
+                        res = db.save_quiz_result(user_id, quiz_title, score, total, incorrect_data)
+                        if res:
+                            st.toast("📝 오답이 데이터베이스에 저장되었습니다.", icon="💾")
+                        else:
+                            st.error("❌ 오답 저장 실패 (데이터베이스 응답 없음)")
+                    except Exception as e:
+                        st.error(f"❌ 데이터베이스 저장 중 오류 발생: {str(e)}")
+                else:
+                    st.toast("🎉 만점입니다! 저장할 오답이 없습니다.", icon="🌟")
+            else:
+                st.warning("⚠️ 로그인하지 않은 상태입니다. 오답이 저장되지 않습니다.")
             
             st.rerun()
 

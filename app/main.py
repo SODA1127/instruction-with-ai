@@ -48,15 +48,19 @@ def render_sidebar() -> str:
                 st.login("google")
         else:
             # 로그인 성공 후 프로필 DB 업데이트
-            try:
-                db.upsert_profile(
-                    user_id=st.user.get("sub"),
-                    email=st.user.email,
-                    full_name=st.user.name,
-                    avatar_url=st.user.get("picture")
-                )
-            except Exception:
-                pass
+            if "profile_updated" not in st.session_state:
+                try:
+                    success = db.upsert_profile(
+                        user_id=st.user.sub,
+                        email=st.user.email,
+                        full_name=st.user.name,
+                        avatar_url=st.user.get("picture") if hasattr(st.user, "get") else getattr(st.user, "picture", None)
+                    )
+                    if success:
+                        st.session_state.profile_updated = True
+                except Exception as e:
+                    # 너무 빈번한 에러 표시 방지를 위해 세션당 한 번만 혹은 로그로 처리
+                    pass
             
             # 프로필 UI
             p_url = st.user.get("picture", "").replace("=s96-c", "=s128-c") if st.user.get("picture") else ""
