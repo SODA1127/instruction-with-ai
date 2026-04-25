@@ -50,6 +50,30 @@ def safe_filename(filename: str) -> str:
     clean = clean.replace(' ', '_')
     return clean if clean.strip() else "downloaded_file"
 
+def clean_text_symbols(text: str) -> str:
+    """텍스트 내의 특수 기호, 중복 라텍스 표시, 불필요한 태그 등을 정제합니다."""
+    if not text:
+        return ""
+    
+    # 1. 라텍스 이스케이프 및 특수 기호 정제 (\$ -> $)
+    text = text.replace(r'\$', '$')
+    text = text.replace(r'\*', '*')
+    text = text.replace(r'\_', '_')
+    
+    # 2. 수식 내 % 기호 처리 (LaTeX 표준 \%로 통일)
+    # 가끔 AI가 \\% 또는 $\%$ 등으로 출력하는 경우를 대비
+    text = re.sub(r'\\+%', '%', text)
+    text = text.replace('%', r'\%')
+    text = text.replace(r'\\%', r'\%') # 중복 방지
+    
+    # 3. 불필요한 태그 제거 (parse_quiz_json 등에서도 사용됨)
+    text = re.sub(r'</?(?:details|summary|div|span|b|i|style)[^>]*>', '', text, flags=re.IGNORECASE)
+    
+    # 4. 공백 정제
+    text = re.sub(r' +', ' ', text)
+    
+    return text.strip()
+
 def parse_quiz_markdown(text: str) -> list[dict]:
     """상태 머신 방식을 사용하여 퀴즈 문항을 정교하게 추출합니다."""
     lines = text.split('\n')
