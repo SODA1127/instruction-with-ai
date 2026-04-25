@@ -15,7 +15,8 @@ from src.models import check_lmstudio_connection, check_ollama_connection
 from app.pages import (
     render_image_analyzer, render_step_solver, render_lesson_plan,
     render_quiz_generator, render_chatbot, render_pdf_analyzer,
-    render_code_analyzer, render_feedback_form, render_wrong_notes
+    render_code_analyzer, render_feedback_form, render_wrong_notes,
+    render_quiz_viewer
 )
 import src.db_manager as db
 # from src.st_google_auth import st_google_auth  # 더 이상 필요 없음
@@ -344,6 +345,12 @@ def main() -> None:
     """, unsafe_allow_html=True)
 
     feature = render_sidebar()
+
+    # 🔗 공유 퀴즈 링크가 있는 경우 우선 렌더링
+    quiz_id = st.query_params.get("quiz_id")
+    if quiz_id:
+        render_quiz_viewer(quiz_id)
+        return
 
     # 클라우드 프로바이더인데 API 키가 없을 경우 경고
     provider = st.session_state.get("provider", P.ALL[0])

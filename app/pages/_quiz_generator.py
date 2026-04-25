@@ -272,6 +272,39 @@ def render_quiz_generator() -> None:
                     st.warning("⚠️ 퀴즈 데이터가 없습니다.")
                 st.rerun()
 
+        # 🔗 [NEW] 공유 링크 생성 섹션
+        st.divider()
+        sc1, sc2 = st.columns([2, 1])
+        with sc1:
+            st.info("💡 **이 퀴즈를 다른 사람에게 공유하고 싶나요?** 링크를 생성하여 문제를 함께 풀 수 있습니다.")
+        with sc2:
+            if st.button("🔗 공유 링크 생성", key="btn_share_quiz", use_container_width=True, type="primary"):
+                quiz_to_share = {
+                    "passage": st.session_state.get("quiz_passage", ""),
+                    "questions": st.session_state.get("quiz_list", [])
+                }
+                if not quiz_to_share["questions"]:
+                    st.error("❌ 공유할 퀴즈 데이터가 없습니다.")
+                else:
+                    with st.spinner("🚀 공유 링크 생성 중..."):
+                        quiz_id = db.save_shared_quiz(quiz_to_share)
+                        if quiz_id:
+                            # 현재 접속 중인 호스트 주소 파악 (로컬/배포 환경 대응)
+                            # Streamlit v1.34+ 에서는 st.query_params 를 통해 URL 구성
+                            # 실제 환경에서는 배포된 도메인이 필요함
+                            base_url = "http://localhost:8501" # 기본값
+                            # 실제 배포 환경이라면 st.query_params나 환경 변수를 통해 가져올 수 있음
+                            share_url = f"{base_url}/?quiz_id={quiz_id}"
+                            
+                            st.session_state.last_share_url = share_url
+                            st.success("✅ 공유 링크가 생성되었습니다!")
+                        else:
+                            st.error("❌ 공유 링크 생성 실패 (DB 연동 오류)")
+
+        if st.session_state.get("last_share_url"):
+            st.code(st.session_state.last_share_url, language="text")
+            st.warning("⚠️ 위 링크를 복사하여 공유하세요! (주의: 로컬 환경에서는 localhost로 생성됩니다.)")
+
     # ── 퀴즈 직접 풀어보기 UI (대화형) ──────────────────────────────
     if st.session_state.get("quiz_solving_mode") and st.session_state.get("quiz_solved_data"):
         st.divider()

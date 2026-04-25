@@ -7,3 +7,4 @@ from ._pdf_analyzer import render_pdf_analyzer
 from ._code_analyzer import render_code_analyzer
 from ._feedback_form import render_feedback_form
 from ._wrong_notes import render_wrong_notes
+from ._quiz_viewer import render_quiz_viewer

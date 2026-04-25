@@ -97,6 +97,30 @@ def get_quiz_results(user_id: str) -> List[Dict[str, Any]]:
         logger.error(f"퀴즈 결과 조회 오류 ({user_id}): {e}")
         return []
 
+def save_shared_quiz(quiz_data: Dict[str, Any]) -> Optional[str]:
+    """공유용 퀴즈 데이터를 저장하고 UUID를 반환합니다."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('shared_quizzes').insert({"quiz_data": quiz_data}).execute()
+        if response and response.data:
+            return response.data[0]["id"]
+        return None
+    except Exception as e:
+        logger.error(f"공유 퀴즈 저장 오류: {e}")
+        return None
+
+def get_shared_quiz(quiz_id: str) -> Optional[Dict[str, Any]]:
+    """ID 기반으로 공유된 퀴즈 데이터를 가져옵니다."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('shared_quizzes').select('quiz_data').eq('id', quiz_id).execute()
+        if response and response.data:
+            return response.data[0]["quiz_data"]
+        return None
+    except Exception as e:
+        logger.error(f"공유 퀴즈 조회 오류 ({quiz_id}): {e}")
+        return None
+
 # 기존 'db.method()' 호환성을 위한 클래스 래퍼 (선택 사항)
 class _LegacyDBGate:
     def upsert_profile(self, *args, **kwargs): return upsert_profile(*args, **kwargs)
@@ -105,5 +129,7 @@ class _LegacyDBGate:
     def save_quiz_result(self, *args, **kwargs): return save_quiz_result(*args, **kwargs)
     def get_quiz_results(self, *args, **kwargs): return get_quiz_results(*args, **kwargs)
     def get_wrong_answers(self, user_id): return get_quiz_results(user_id) # 이전 이름 호환
+    def save_shared_quiz(self, quiz_data): return save_shared_quiz(quiz_data)
+    def get_shared_quiz(self, quiz_id): return get_shared_quiz(quiz_id)
 
 db = _LegacyDBGate()
