@@ -287,16 +287,26 @@ def render_quiz_generator() -> None:
                     st.error("❌ 공유할 퀴즈 데이터가 없습니다.")
                 else:
                     with st.spinner("🚀 공유 링크 생성 중..."):
-                        quiz_id = db.save_shared_quiz(quiz_to_share)
-                        if quiz_id:
-                            # 현재 접속 중인 호스트 주소 파악 (로컬/배포 환경 대응)
-                            # Streamlit v1.34+ 에서는 st.query_params 를 통해 URL 구성
-                            # 실제 환경에서는 배포된 도메인이 필요함
-                            base_url = "http://localhost:8501" # 기본값
-                            # 실제 배포 환경이라면 st.query_params나 환경 변수를 통해 가져올 수 있음
-                            share_url = f"{base_url}/?quiz_id={quiz_id}"
+                        # 공유용 데이터 준비
+                        quiz_data = {
+                            "subject": st.session_state.get("quiz_current_subject", "일반 퀴즈"),
+                            "questions": quiz_to_share["questions"]
+                        }
+                        
+                        # 공유 링크 생성 (배포 환경 자동 감지)
+                        # secrets의 auth.redirect_uri에서 base_url 추출 (ex: https://...app/oauth2callback -> https://...app/)
+                        try:
+                            redirect_uri = st.secrets.get("auth", {}).get("redirect_uri", "")
+                            if redirect_uri and "localhost" not in redirect_uri:
+                                base_url = redirect_uri.replace("oauth2callback", "")
+                            else:
+                                base_url = "http://localhost:8501/"
+                        except:
+                            base_url = "http://localhost:8501/"
                             
-                            st.session_state.last_share_url = share_url
+                        quiz_id = db.save_shared_quiz(quiz_data)
+                        if quiz_id:
+                            st.session_state.last_share_url = f"{base_url}?quiz_id={quiz_id}"
                             st.success("✅ 공유 링크가 생성되었습니다!")
                         else:
                             st.error("❌ 공유 링크 생성 실패 (DB 연동 오류)")
