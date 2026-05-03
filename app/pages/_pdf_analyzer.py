@@ -261,14 +261,11 @@ def _render_question_solver_ui(
 
         q_col, btn_col = st.columns([5, 1])
         with q_col:
+            q_text = q["content"][:200] + ("..." if len(q["content"]) > 200 else "")
             st.markdown(
-                f'<div style="display:flex;align-items:flex-start;gap:12px;">'
                 f'<span style="background:#4f46e5;color:white;border-radius:6px;'
-                f'padding:2px 10px;font-weight:700;font-size:0.85rem;white-space:nowrap;">'
-                f'{q["number"]}번</span>'
-                f'<span style="color:#e2e8f0;font-size:0.95rem;">{q["content"][:200]}'
-                f'{"..." if len(q["content"]) > 200 else ""}</span>'
-                f'</div>',
+                f'padding:2px 10px;font-weight:700;font-size:0.85rem;margin-right:10px;">'
+                f'{q["number"]}번</span> {q_text}',
                 unsafe_allow_html=True,
             )
         with btn_col:
