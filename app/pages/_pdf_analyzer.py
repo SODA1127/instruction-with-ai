@@ -204,7 +204,7 @@ def _render_question_solver_ui(
             st.rerun()
     with ctrl_col3:
         if st.button("🔄 문제 재추출", key="reextract_btn", use_container_width=True):
-            for k in ("pdf_questions", "pdf_solutions", "pdf_solve_all"):
+            for k in ("pdf_questions", "pdf_solutions", "pdf_solve_all", "pdf_bytes_cache", "pdf_all_cache_key"):
                 st.session_state.pop(k, None)
             st.rerun()
 
@@ -223,19 +223,25 @@ def _render_question_solver_ui(
                 sol = _solve_single_question(
                     q, content_text, images_b64, provider, model, api_key, filename, mode
                 )
-                return idx, sol
+                pdf_b = app_utils.make_pdf_bytes(sol)
+                return idx, sol, pdf_b
 
             completed = 0
+            if "pdf_bytes_cache" not in st.session_state:
+                st.session_state.pdf_bytes_cache = {}
+                
             # 멀티스레딩 병렬 처리 적용 (API Rate Limit 방지를 위해 5개로 제한)
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {executor.submit(_solve_task, idx): idx for idx in unsolved}
                 
                 for future in concurrent.futures.as_completed(futures):
-                    idx, sol = future.result()
+                    idx, sol, pdf_b = future.result()
                     solutions[idx] = sol
+                    st.session_state.pdf_bytes_cache[idx] = pdf_b
+                    
                     completed += 1
                     prog.progress(completed / len(unsolved),
-                                  text=f"전체 풀이 진행 중... ({completed}/{len(unsolved)} 완료)")
+                                  text=f"풀이 및 PDF 변환 진행 중... ({completed}/{len(unsolved)} 완료)")
 
             prog.empty()
         st.session_state.pdf_solve_all = False
@@ -268,11 +274,15 @@ def _render_question_solver_ui(
         with btn_col:
             btn_label = "✅ 재풀이" if solved else "📖 풀이"
             if st.button(btn_label, key=f"solve_q_{i}", use_container_width=True):
-                with st.spinner(f"문제 {q['number']} 풀이 생성 중..."):
+                with st.spinner(f"문제 {q['number']} 풀이 및 PDF 생성 중..."):
                     sol = _solve_single_question(
                         q, content_text, images_b64, provider, model, api_key, filename, mode
                     )
+                    pdf_b = app_utils.make_pdf_bytes(sol)
                 solutions[i] = sol
+                if "pdf_bytes_cache" not in st.session_state:
+                    st.session_state.pdf_bytes_cache = {}
+                st.session_state.pdf_bytes_cache[i] = pdf_b
                 st.rerun()
 
         if solved:
@@ -290,7 +300,15 @@ def _render_question_solver_ui(
                                        file_name=f"{q_filename}.md", mime="text/markdown",
                                        key=f"dl_sol_{i}", use_container_width=True)
                 with dl_col2:
-                    pdf_bytes = app_utils.make_pdf_bytes(solutions[i])
+                    if "pdf_bytes_cache" not in st.session_state:
+                        st.session_state.pdf_bytes_cache = {}
+                    
+                    pdf_bytes = st.session_state.pdf_bytes_cache.get(i)
+                    if pdf_bytes is None:
+                        # Fallback for old sessions
+                        pdf_bytes = app_utils.make_pdf_bytes(solutions[i])
+                        st.session_state.pdf_bytes_cache[i] = pdf_bytes
+                        
                     if pdf_bytes:
                         st.download_button("💾 PDF 저장", data=pdf_bytes,
                                            file_name=f"{q_filename}.pdf", mime="application/pdf",
@@ -316,7 +334,16 @@ def _render_question_solver_ui(
                                file_name=f"{all_filename}.md", mime="text/markdown",
                                key="dl_all_solutions", use_container_width=True)
         with col2:
-            pdf_bytes = app_utils.make_pdf_bytes(all_sols)
+            cache_key = hash(all_sols)
+            if "pdf_bytes_cache" not in st.session_state:
+                st.session_state.pdf_bytes_cache = {}
+                
+            if st.session_state.get("pdf_all_cache_key") != cache_key:
+                with st.spinner("전체 풀이 PDF 변환 중..."):
+                    st.session_state.pdf_bytes_cache["all"] = app_utils.make_pdf_bytes(all_sols)
+                    st.session_state.pdf_all_cache_key = cache_key
+                    
+            pdf_bytes = st.session_state.pdf_bytes_cache.get("all")
             if pdf_bytes:
                 st.download_button("💾 전체 풀이 저장 (.pdf)", data=pdf_bytes,
                                    file_name=f"{all_filename}.pdf", mime="application/pdf",
