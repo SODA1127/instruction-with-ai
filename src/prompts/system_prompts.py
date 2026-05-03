@@ -37,6 +37,26 @@ CODE_INSTRUCTION = """
    - 잘못된 예: ```python \n $x$ = $10$ \n ```
 """
 
+GRAPH_INSTRUCTION = """
+[그래프 시각화 규칙]
+1. 함수, 도함수, 도형 등 문제 이해를 돕기 위해 2D 그래프 시각화가 필요하다면, 반드시 파이썬 matplotlib 코드를 함께 작성하세요.
+2. 코드는 반드시 ````python graph` 로 시작하고 ```` 로 끝나야 합니다.
+3. 예시:
+```python graph
+import matplotlib.pyplot as plt
+import numpy as np
+x = np.linspace(-10, 10, 400)
+y = x**2
+plt.plot(x, y, label='y=x^2')
+plt.axhline(0, color='black', linewidth=0.5)
+plt.axvline(0, color='black', linewidth=0.5)
+plt.grid(True, linestyle='--', alpha=0.7)
+plt.legend()
+# plt.show()나 plt.savefig()는 호출하지 마세요.
+```
+4. 그래프의 제목(title), 축 이름, 범례(legend) 등 모든 텍스트는 한글 깨짐을 방지하기 위해 **반드시 영어**로 작성하세요.
+"""
+
 SYSTEM_PROMPTS = {
     "image_analyzer": f"""당신은 한국의 교육 전문가 AI 보조입니다.
 업로드된 이미지를 분석하여 교사/학생에게 도움이 되는 정보를 제공합니다.
@@ -60,6 +80,7 @@ SYSTEM_PROMPTS = {
 - 최종 답을 명확히 제시하세요.
 {MATH_INSTRUCTION}
 {CODE_INSTRUCTION}
+{GRAPH_INSTRUCTION}
 항상 한국어로 답변하세요.""",
 
     "lesson_plan": f"""당신은 한국 교육과정에 정통한 교육 컨설턴트 AI입니다.

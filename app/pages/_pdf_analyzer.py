@@ -284,7 +284,31 @@ def _render_question_solver_ui(
 
         if solved:
             with st.expander(f"📐 문제 {q['number']} 풀이 보기", expanded=True):
-                st.markdown(solutions[i])
+                sol_text = solutions[i]
+                
+                # 그래프 코드 파싱 및 실행
+                parts = re.split(r'```python\s*graph\n(.*?)```', sol_text, flags=re.DOTALL | re.IGNORECASE)
+                
+                for idx_p, part in enumerate(parts):
+                    if idx_p % 2 == 0:
+                        if part.strip():
+                            st.markdown(part)
+                    else:
+                        code = part.strip()
+                        with st.expander("💻 그래프 생성 코드", expanded=False):
+                            st.code(code, language='python')
+                        try:
+                            import matplotlib.pyplot as plt
+                            plt.rc('font', family='sans-serif') 
+                            plt.rcParams['axes.unicode_minus'] = False
+                            
+                            fig = plt.figure(figsize=(6, 4))
+                            local_vars = {'plt': plt, 'np': __import__('numpy')}
+                            exec(code, globals(), local_vars)
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        except Exception as e:
+                            st.error(f"⚠️ 그래프 렌더링 오류: {e}")
                 
                 orig_name = st.session_state.get("pdf_filename", "pdf")
                 base_name = os.path.splitext(orig_name)[0]
