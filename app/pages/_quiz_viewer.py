@@ -15,6 +15,11 @@ def render_quiz_viewer(quiz_id: str) -> None:
             st.rerun()
         return
 
+    # PDF 문제 풀이 공유 모드 분기
+    if quiz_data.get("type") == "pdf_analysis":
+        _render_pdf_shared_viewer(quiz_id, quiz_data)
+        return
+
     passage = quiz_data.get("passage", "")
     questions = quiz_data.get("questions", [])
 
@@ -103,3 +108,49 @@ def render_quiz_viewer(quiz_id: str) -> None:
         if st.button("🏠 메인 페이지로 돌아가기", use_container_width=True):
             st.query_params.clear()
             st.rerun()
+
+def _render_pdf_shared_viewer(quiz_id: str, quiz_data: dict) -> None:
+    st.title("📑 공유된 PDF 문제 풀이 노트")
+    st.info(f"문서: **{quiz_data.get('subject', 'PDF 문서')}**")
+    
+    questions = quiz_data.get("questions", [])
+    if not questions:
+        st.warning("풀이가 포함된 문제가 없습니다.")
+        return
+        
+    import re
+    for i, q in enumerate(questions):
+        st.markdown(f"#### **Q{q.get('number', i+1)}. {q.get('content', '')}**")
+        with st.expander("📐 풀이 보기", expanded=True):
+            sol_text = q.get("solution", "")
+            
+            # 그래프 코드 파싱 및 실행
+            parts = re.split(r'```python\s*graph\n(.*?)```', sol_text, flags=re.DOTALL | re.IGNORECASE)
+            
+            for idx_p, part in enumerate(parts):
+                if idx_p % 2 == 0:
+                    if part.strip():
+                        st.markdown(part)
+                else:
+                    code = part.strip()
+                    with st.expander("💻 그래프 생성 코드", expanded=False):
+                        st.code(code, language='python')
+                    try:
+                        import matplotlib.pyplot as plt
+                        plt.close('all')
+                        plt.rc('font', family='sans-serif') 
+                        plt.rcParams['axes.unicode_minus'] = False
+                        
+                        local_vars = {'plt': plt, 'np': __import__('numpy')}
+                        exec(code, globals(), local_vars)
+                        
+                        fig = plt.gcf()
+                        st.pyplot(fig)
+                        plt.close('all')
+                    except Exception as e:
+                        st.error(f"⚠️ 그래프 렌더링 오류: {e}")
+        st.divider()
+
+    if st.button("🏠 메인 페이지로 돌아가기", use_container_width=True):
+        st.query_params.clear()
+        st.rerun()

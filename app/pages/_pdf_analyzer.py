@@ -373,6 +373,51 @@ def _render_question_solver_ui(
                                    file_name=f"{all_filename}.pdf", mime="application/pdf",
                                    key="dl_all_solutions_pdf", use_container_width=True)
 
+        # 🔗 [NEW] 공유 링크 생성 섹션
+        st.divider()
+        sc1, sc2 = st.columns([2, 1])
+        with sc1:
+            st.info("💡 **이 풀이 노트를 다른 사람에게 공유하고 싶나요?** 링크를 생성하여 함께 볼 수 있습니다.")
+        with sc2:
+            if st.button("🔗 공유 링크 생성", key="btn_share_pdf", use_container_width=True, type="primary"):
+                quiz_data = {
+                    "type": "pdf_analysis",
+                    "subject": st.session_state.get("pdf_filename", "PDF 문서"),
+                    "questions": [
+                        {
+                            "number": q["number"],
+                            "content": q["content"],
+                            "solution": solutions.get(i, "아직 풀이가 생성되지 않았습니다.")
+                        }
+                        for i, q in enumerate(questions) if i in solutions
+                    ]
+                }
+                
+                if not quiz_data["questions"]:
+                    st.error("❌ 공유할 풀이 데이터가 없습니다.")
+                else:
+                    with st.spinner("🚀 공유 링크 생성 중..."):
+                        from src.db_manager import db
+                        try:
+                            redirect_uri = st.secrets.get("auth", {}).get("redirect_uri", "")
+                            if redirect_uri and "localhost" not in redirect_uri:
+                                base_url = redirect_uri.replace("oauth2callback", "")
+                            else:
+                                base_url = "http://localhost:8501/"
+                        except:
+                            base_url = "http://localhost:8501/"
+                            
+                        quiz_id = db.save_shared_quiz(quiz_data)
+                        if quiz_id:
+                            st.session_state.last_pdf_share_url = f"{base_url}?quiz_id={quiz_id}"
+                            st.success("✅ 공유 링크가 생성되었습니다!")
+                        else:
+                            st.error("❌ 공유 링크 생성 실패 (DB 연동 오류)")
+
+        if st.session_state.get("last_pdf_share_url"):
+            st.code(st.session_state.last_pdf_share_url, language="text")
+            st.warning("⚠️ 위 링크를 복사하여 공유하세요!")
+
 
 def _solve_single_question(
     q: dict, content_text: str, images_b64: list[str] | None,
