@@ -299,14 +299,17 @@ def _render_question_solver_ui(
                             st.code(code, language='python')
                         try:
                             import matplotlib.pyplot as plt
+                            plt.close('all') # 이전 플롯 초기화
                             plt.rc('font', family='sans-serif') 
                             plt.rcParams['axes.unicode_minus'] = False
                             
-                            fig = plt.figure(figsize=(6, 4))
                             local_vars = {'plt': plt, 'np': __import__('numpy')}
                             exec(code, globals(), local_vars)
+                            
+                            # AI 코드가 그린 현재 활성화된 figure 가져오기
+                            fig = plt.gcf()
                             st.pyplot(fig)
-                            plt.close(fig)
+                            plt.close('all')
                         except Exception as e:
                             st.error(f"⚠️ 그래프 렌더링 오류: {e}")
                 
