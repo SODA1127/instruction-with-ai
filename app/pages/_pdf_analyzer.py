@@ -214,15 +214,29 @@ def _render_question_solver_ui(
     if st.session_state.get("pdf_solve_all"):
         unsolved = [i for i in range(len(questions)) if i not in solutions]
         if unsolved:
-            prog = st.progress(0, text="전체 풀이 진행 중...")
-            for step, idx in enumerate(unsolved):
+            prog = st.progress(0, text="전체 풀이 진행 중 (병렬 처리)...")
+            
+            import concurrent.futures
+            
+            def _solve_task(idx):
                 q = questions[idx]
-                prog.progress((step + 1) / len(unsolved),
-                               text=f"문제 {q['number']} 풀이 중... ({step+1}/{len(unsolved)})")
                 sol = _solve_single_question(
                     q, content_text, images_b64, provider, model, api_key, filename, mode
                 )
-                solutions[idx] = sol
+                return idx, sol
+
+            completed = 0
+            # 멀티스레딩 병렬 처리 적용 (API Rate Limit 방지를 위해 5개로 제한)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(_solve_task, idx): idx for idx in unsolved}
+                
+                for future in concurrent.futures.as_completed(futures):
+                    idx, sol = future.result()
+                    solutions[idx] = sol
+                    completed += 1
+                    prog.progress(completed / len(unsolved),
+                                  text=f"전체 풀이 진행 중... ({completed}/{len(unsolved)} 완료)")
+
             prog.empty()
         st.session_state.pdf_solve_all = False
         st.rerun()
