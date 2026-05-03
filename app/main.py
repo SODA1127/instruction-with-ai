@@ -5,6 +5,11 @@ import os
 # 프로젝트 루트를 sys.path의 최우선 순위로 설정하여 다른 프로젝트(src)와의 충돌 방지
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import logging
+# 서드파티 라이브러리의 불필요한 디버그 로그 스팸 차단
+logging.getLogger('fontTools').setLevel(logging.WARNING)
+logging.getLogger('weasyprint').setLevel(logging.WARNING)
+
 import streamlit as st
 import src
 from src.config import (
