@@ -410,6 +410,34 @@ def latex_to_svg(latex_str: str) -> str | None:
     
     return None
 
+def graph_code_to_svg(code: str) -> str | None:
+    """Python matplotlib 코드를 실행하여 그래프 이미지를 SVG 포맷의 base64 URI로 반환합니다."""
+    if not _MATPLOTLIB_OK:
+        return None
+    
+    try:
+        import numpy as np
+        # 스레드 세이프를 위해 매번 새로운 figure 생성 및 폰트 설정
+        plt.close('all')
+        plt.rc('font', family='sans-serif')
+        plt.rcParams['axes.unicode_minus'] = False
+        
+        # AI가 작성한 코드 실행 (제한된 환경)
+        local_vars = {'plt': plt, 'np': np}
+        # plt.show() 호출 등을 방지하기 위해 exec 사용
+        exec(code, {}, local_vars)
+        
+        fig = plt.gcf()
+        buf = io.BytesIO()
+        plt.savefig(buf, format='svg', bbox_inches='tight', transparent=True)
+        plt.close('all')
+        
+        b64_svg = base64.b64encode(buf.getvalue()).decode('utf-8')
+        return f"data:image/svg+xml;base64,{b64_svg}"
+    except Exception as e:
+        print(f"Graph execution error: {e}")
+        return None
+
 def make_pdf_bytes(markdown_text: str) -> bytes | None:
     """Markdown을 HTML로 변환 후 수식은 SVG 이미지로 대체하여 고품질 PDF를 생성합니다."""
     if not _WEASYPRINT_OK:
@@ -443,11 +471,29 @@ def make_pdf_bytes(markdown_text: str) -> bytes | None:
         # 인라인 수식 처리 ($ ... $)
         clean_md = re.sub(r'\$(.*?)\$', lambda m: repl_math(m, False), clean_md)
         
+        # 2.5 그래프 코드 -> SVG 이미지 (플레이스홀더 전략)
+        graph_placeholders = {}
+        def repl_graph(match):
+            code = match.group(1).strip()
+            placeholder = f"@@GRAPH_SVG_{len(graph_placeholders)}@@"
+            svg_uri = graph_code_to_svg(code)
+            
+            if svg_uri:
+                img_html = f'<div style="text-align:center; margin: 2em 0;"><img src="{svg_uri}" style="max-width: 100%;" /></div>'
+                graph_placeholders[placeholder] = img_html
+            else:
+                graph_placeholders[placeholder] = match.group(0)
+            return placeholder
+
+        clean_md = re.sub(r'```python\s*graph\n(.*?)```', repl_graph, clean_md, flags=re.DOTALL | re.IGNORECASE)
+        
         # 3. Markdown -> HTML 변환
         html_body = markdown.markdown(clean_md, extensions=['extra', 'codehilite', 'tables'])
         
         # 4. 플레이스홀더를 실제 SVG 이미지 태그로 복구
         for ph, img_tag in math_placeholders.items():
+            html_body = html_body.replace(ph, img_tag)
+        for ph, img_tag in graph_placeholders.items():
             html_body = html_body.replace(ph, img_tag)
         
         # [ANSWER_START] 등을 스타일링 가능한 div로 치환
